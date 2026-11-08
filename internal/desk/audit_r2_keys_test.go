@@ -593,7 +593,10 @@ func startedOn(t *testing.T, s *Server, project string) (*Server, *bytes.Buffer)
 // the installation's own project removes nothing, and says why. Without a
 // Desk home the installation is sealed to the project Desk was first started
 // on (v0.14.0), so a start on another project, or on the desk itself opened
-// directly, is refused in words and removes nothing.
+// directly, is refused in words and removes nothing. With the storage line
+// off there is no seal (v0.13.2): a start on another project against the same
+// configuration removes nothing, and says why; a start on the desk itself,
+// opened directly, finds it published and removes the marker alone.
 func TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey(t *testing.T) {
 	const id = "e3100000000000000000000000000001"
 	calls, s, ts, _ := signingStandIn(t)
@@ -609,6 +612,24 @@ func TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey(t *testing.T) {
 	}
 	all := []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}
 
+	if !storageLineOn() {
+		other, logged := startedOn(t, s, t.TempDir())
+		if names := namesIn(t, folder); !slices.Equal(names, all) {
+			t.Errorf("a start on another project left %q: %s", names, logged)
+		}
+		if !strings.Contains(logged.String(), deskMovedWords) {
+			t.Errorf("a start on another project did not say why it kept the key: %s", logged)
+		}
+
+		direct, logged := startedOn(t, other, moved)
+		if direct.cfg.deskID != id {
+			t.Fatalf("Desk opened the moved desk as %q", direct.cfg.deskID)
+		}
+		if names := namesIn(t, folder); !slices.Equal(names, all[1:]) {
+			t.Errorf("a start on the desk itself left %q: %s", names, logged)
+		}
+		return
+	}
 	own, logged := startedOn(t, s, s.projectDir)
 	if names := namesIn(t, folder); !slices.Equal(names, all) {
 		t.Errorf("a start of the installation's project left %q: %s", names, logged)

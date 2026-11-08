@@ -489,6 +489,7 @@ func TestAssistantRunStoragePendingRestoreAndCustody(t *testing.T) {
 // was the sibling relink and destination-ledger conflict test, which started
 // both projects' Desks on one installation.
 func TestAssistantRunStorageSiblingRelinkAndConflict(t *testing.T) {
+	requireStorageLine(t)
 	old, ots, store, binding, record, lease, _ := assistantRunHTTPFixture(t)
 	assistantRunMust(t, lease.Close())
 	ledger := filepath.Join(storageGet(t, ots).Path, store.name)
@@ -507,6 +508,62 @@ func TestAssistantRunStorageSiblingRelinkAndConflict(t *testing.T) {
 	}
 	if _, err := runs.Read(context.Background(), binding, record.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// With the storage line off there is no first-project seal and a second Desk
+// starts beside the first (v0.13.2): a sibling project's run ledger is
+// previewed and relinked into the moved project, and a destination ledger of
+// its own refuses the relink rather than merge.
+func TestAssistantRunStorageSiblingRelinkAndConflictStorageLineOff(t *testing.T) {
+	if storageLineOn() {
+		t.Skip("v0.13.2 behaviour, with the storage line off; TestAssistantRunStorageSiblingRelinkAndConflict covers it on")
+	}
+	for _, conflict := range []bool{false, true} {
+		t.Run(map[bool]string{false: "sibling only", true: "destination ledger"}[conflict], func(t *testing.T) {
+			old, _, store, binding, record, lease, _ := assistantRunHTTPFixture(t)
+			assistantRunMust(t, lease.Close())
+			moved, mts, _ := assistantServerIn(t, old.configDir)
+			stale := moved.assistantRuns()
+			if conflict {
+				raw := assistantRunRaw(t, store)
+				ledger, err := decodeAssistantRunStorage(store.name, raw)
+				assistantRunMust(t, err)
+				ledger.Project = stale.project
+				ledger.Runs[0].Binding.Project = stale.project
+				raw, _ = json.Marshal(ledger)
+				root, err := moved.openChatData()
+				assistantRunMust(t, err)
+				assistantRunMust(t, writePrivateData(root.root, stale.name, raw))
+				root.root.Close()
+			}
+			request := projectHistoryRequest{PreviousProject: old.projectDir}
+			code, preview, body := historyRequest(t, mts, "preview", request)
+			if conflict {
+				if code != 409 {
+					t.Fatalf("ledger merged during relink %d %s", code, body)
+				}
+				return
+			}
+			if code != 200 || preview.ChatCount != 0 || preview.SourceRevision != "absent" {
+				t.Fatalf("sibling preview %d %s", code, body)
+			}
+			request.SourceRevision = preview.SourceRevision
+			request.BindingsRevision = preview.BindingsRevision
+			if code, _, body = historyRequest(t, mts, "relink", request); code != 200 {
+				t.Fatalf("sibling relink %d %s", code, body)
+			}
+			linked := moved.assistantRuns()
+			if linked.name != store.name {
+				t.Fatal("relink orphaned original namespace")
+			}
+			if _, err := linked.Read(context.Background(), binding, record.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := stale.Read(context.Background(), binding, record.ID); !errors.Is(err, errAssistantRunScope) {
+				t.Fatalf("pre-relink store trusted stale namespace %v", err)
+			}
+		})
 	}
 }
 
