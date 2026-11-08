@@ -678,7 +678,9 @@ func TestStorageCreationFixedCreatorsRespectOriginalRootWindow(t *testing.T) {
 	if err = storageCreateDraftIgnore(root); !errors.Is(err, storagebudget.ErrBusy) {
 		t.Fatal("draft ignore creator escaped held root", err)
 	}
-	if file, err := storageCreateDraftWorkflowLock(root); !errors.Is(err, storagebudget.ErrBusy) {
+	// The workflow creator keeps trying the held window for its bound, then
+	// refuses in the worded, retryable form (409 CodeStale).
+	if file, err := storageCreateDraftWorkflowLock(t.Context(), root); !errors.Is(err, storagebudget.ErrBusy) || codeOf(err) != CodeStale {
 		if file != nil {
 			file.Close()
 		}
@@ -692,7 +694,7 @@ func TestStorageCreationFixedCreatorsRespectOriginalRootWindow(t *testing.T) {
 	storageTestMust(t, lease.Close())
 	storageTestMust(t, claimPrivateData(root, dataMarkerName, []byte(`{"version":1,"owner":"fixture"}`)))
 	storageTestMust(t, storageCreateDraftIgnore(root))
-	file, err := storageCreateDraftWorkflowLock(root)
+	file, err := storageCreateDraftWorkflowLock(t.Context(), root)
 	storageTestMust(t, err)
 	storageTestMust(t, file.Close())
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const dialectDraftDir = ".desk-private/dialect-drafts"
@@ -50,7 +51,7 @@ func (s *Server) lockDialectDraftWorkflow(ctx context.Context) (func(), error) {
 		named, e := storageOpenFile(root, "workflow.lock", 0)
 		lock, err = named.file, e
 	} else {
-		lock, err = storageCreateDraftWorkflowLock(root)
+		lock, err = storageCreateDraftWorkflowLock(ctx, root)
 	}
 	if err != nil {
 		return nil, err
@@ -73,8 +74,13 @@ func storageCreateDraftIgnore(root *os.Root) (err error) {
 	defer func() { err = errors.Join(err, lease.Close()) }()
 	return writePrivateData(root, ".gitignore", []byte("*\n"))
 }
-func storageCreateDraftWorkflowLock(root *os.Root) (out *os.File, err error) {
-	lease, err := storageCreatorAcquire(root)
+
+// draftWorkflowCreatorWait bounds how long a draft workflow keeps trying the
+// drafts folder's creator window while another transaction holds it.
+const draftWorkflowCreatorWait = 5 * time.Second
+
+func storageCreateDraftWorkflowLock(ctx context.Context, root *os.Root) (out *os.File, err error) {
+	lease, err := storageCreatorAcquireWithin(ctx, root, draftWorkflowCreatorWait)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +101,40 @@ func storageCreateDraftWorkflowLock(root *os.Root) (out *os.File, err error) {
 		return nil, errors.Join(errStorageCustody, err, e, file.Close())
 	}
 	return file, nil
+}
+
+// storageCreatorAcquireWithin takes the creator window, which stays try-only:
+// while another open file holds it, it tries again after a short backoff, for
+// at most limit and never past ctx. It holds nothing of its own between tries,
+// and its bound means a holder that waits on its caller cannot deadlock. A held
+// window at the bound is the worded, retryable busy refusal (409); any other
+// failure, and the caller's own cancellation, is returned as it is.
+func storageCreatorAcquireWithin(ctx context.Context, root *os.Root, limit time.Duration) (*storageCreatorLease, error) {
+	bounded, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	delay := 5 * time.Millisecond
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		lease, err := storageCreatorAcquire(root)
+		if err == nil || !lockHeld(err) {
+			return lease, err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-bounded.Done():
+			timer.Stop()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, storageLockBusy(err)
+		case <-timer.C:
+		}
+		if delay < 100*time.Millisecond {
+			delay *= 2
+		}
+	}
 }
 
 // Storage planning uses the owner's exact path derivation; it grants no read or

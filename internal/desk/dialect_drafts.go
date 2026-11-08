@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
 
 const dialectDraftLimit = 256 << 10
@@ -196,6 +198,9 @@ func (s *Server) handleDialectDrafts(w http.ResponseWriter, r *http.Request) {
 			writeJSONCoded(w, 503, "storage-busy", "Dialect drafts are being saved. Try again shortly.")
 		} else if errors.Is(err, errDialectDraftConflict) {
 			writeJSONCoded(w, 409, CodeStale, "The dialect draft changed. Reload before saving.")
+		} else if codeOf(err) == CodeStale && errors.Is(err, storagebudget.ErrBusy) {
+			// Another transaction kept the drafts folder past the bounded wait.
+			writeJSONCoded(w, http.StatusConflict, CodeStale, "The dialect draft could not be saved. Storage is busy with another request; try again.")
 		} else {
 			writeJSONCoded(w, 409, CodeBadRequest, "The dialect draft could not be saved or read: "+err.Error())
 		}

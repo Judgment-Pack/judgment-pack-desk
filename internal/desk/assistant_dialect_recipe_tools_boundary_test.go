@@ -264,8 +264,13 @@ func TestAssistantDialectRecipeUncertainWrite(t *testing.T) {
 	// The acknowledged refusal/uncertain receipt remains valid import data.
 	assistantRunMust(t, assistantRecipeImport(t, e, assistantExecutionRecord(t, e)))
 }
+
+// The drafts folder's creator window is try-only. A proposal that finds another
+// transaction holding it tries again for a bounded time without blocking:
+// it proceeds once the holder ends within the bound, refuses in words (409)
+// past it, and honors a withdrawn session or canceled call meanwhile.
 func TestAssistantDialectRecipeQueuedAuthority(t *testing.T) {
-	for _, mode := range []string{"revoked", "canceled"} {
+	for _, mode := range []string{"revoked", "canceled", "released", "held"} {
 		t.Run(mode, func(t *testing.T) {
 			s, token, e := assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
 			x := assistantExecutionOpen(t, s, e)
@@ -276,15 +281,6 @@ func TestAssistantDialectRecipeQueuedAuthority(t *testing.T) {
 			assistantRunMust(t, err)
 			assistantRunMust(t, waitPrivateDataLock(t.Context(), lock, true))
 			defer lock.Close()
-			reached := make(chan struct{}, 1)
-			// Preserve the production file adapter's queue and current-authority callback.
-			s.dialectDrafts = fileDialectDraftRepository{open: func(create bool) (*os.Root, error) {
-				select {
-				case reached <- struct{}{}:
-				default:
-				}
-				return s.openDialectDrafts(create)
-			}, authorize: e.authorizeAssistantDialectRecipe}
 			call := "queued"
 			raw := json.RawMessage(assistantRecipeCandidate)
 			assistantRunMust(t, e.writer.boundEvent(t.Context(), contract.RunEvent{ToolCall: &contract.ToolCall{Type: "tool_call", CallID: &call, Name: "propose_dialect_recipe", Args: raw}}))
@@ -293,43 +289,60 @@ func TestAssistantDialectRecipeQueuedAuthority(t *testing.T) {
 			ctx = context.WithValue(runcontext.WithCallID(ctx, call), assistantHostRootKey{}, true)
 			done := make(chan runcontext.ToolResult, 1)
 			tool := assistantGraphFind(t, x.Run.HostTools, "propose_dialect_recipe")
+			started := time.Now()
 			go func() { result, _ := tool.Execute(ctx, raw); done <- result }()
-			select {
-			case <-reached:
-			case <-time.After(3 * time.Second):
-				t.Fatal("producer did not reach actual draft queue")
-			}
-			select {
-			case <-done:
-				t.Fatal("producer bypassed held directory lock")
-			default:
-			}
-			if mode == "revoked" {
-				s.sessions.revoke(token)
-			} else {
-				cancel()
-			}
-			assistantRunMust(t, lock.Close())
+			// The held window is tried again, not refused at once.
 			select {
 			case result := <-done:
-				if !result.Err() {
-					t.Fatal("withdrawn queued producer created draft")
-				}
-			case <-time.After(3 * time.Second):
-				t.Fatal("queued producer did not drain (lock reentry)")
+				t.Fatal("producer refused a held window without trying again", result.Value().Text())
+			case <-time.After(300 * time.Millisecond):
+			}
+			switch mode {
+			case "revoked":
+				s.sessions.revoke(token)
+			case "canceled":
+				cancel()
+			}
+			if mode != "held" {
+				assistantRunMust(t, lock.Close())
+			}
+			var result runcontext.ToolResult
+			select {
+			case result = <-done:
+			case <-time.After(draftWorkflowCreatorWait + 5*time.Second):
+				t.Fatal("producer did not settle within its bound")
 			}
 			directory, err := root.Open(".")
 			assistantRunMust(t, err)
 			defer directory.Close()
 			entries, err := directory.ReadDir(-1)
 			assistantRunMust(t, err)
+			written := 0
 			for _, entry := range entries {
 				if strings.HasSuffix(entry.Name(), ".json") {
-					t.Fatal("withdrawn producer physically wrote")
+					written++
 				}
 			}
-			if len(assistantExecutionRecord(t, e).DomainOutputs) != 0 {
-				t.Fatal("withdrawn producer output retained")
+			outputs := len(assistantExecutionRecord(t, e).DomainOutputs)
+			if mode == "released" {
+				if result.Err() || written != 1 || outputs != 1 {
+					t.Fatal("proposal did not proceed once the holder ended", result.Value().Text(), written, outputs)
+				}
+				return
+			}
+			if !result.Err() || written != 0 || outputs != 0 {
+				t.Fatal("withdrawn or refused producer wrote a draft", mode, written, outputs)
+			}
+			if mode != "held" {
+				return
+			}
+			if elapsed := time.Since(started); elapsed < draftWorkflowCreatorWait {
+				t.Fatal("held window refused before its bound", elapsed)
+			}
+			// Past the bound the refusal is the worded, retryable 409.
+			w := policyCall(s, token, "DELETE", "/api/dialect-drafts/draft_"+strings.Repeat("a", 32), nil)
+			if w.Code != 409 || !strings.Contains(w.Body.String(), "Storage is busy with another request; try again.") {
+				t.Fatal("held window not answered with the worded 409", w.Code, w.Body.String())
 			}
 		})
 	}
