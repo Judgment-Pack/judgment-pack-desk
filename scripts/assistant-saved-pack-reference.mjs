@@ -2,8 +2,7 @@
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {webcrypto} from 'node:crypto'
-import {AuthoringRun} from '../web/src/research/run.ts'
-import {Ledger} from '../web/src/research/ledger.ts'
+import {SavedChatRun} from '../web/src/assistant/serverRuns/controller.ts'
 import {decodeCheckpoint} from '../web/src/chat/checkpoint.ts'
 import {readPackReview,packVersion,pendingPackCandidate,packCheckAllowsAuto} from '../web/src/chat/packProposal.ts'
 import {decodeStore} from '../web/src/packs/test-workspace/model.ts'
@@ -17,8 +16,8 @@ const [chats,suites,checked,reference]=await Promise.all([chatPath,suitePath,rec
 const chat=chats.chats.find(c=>c.id==='chat-one')
 let work=0
 const unavailable=()=>{work++;throw Error('Reload must observe retained checks without Runtime or model calls')}
-const run=new AuthoringRun({mode:'draft',ledger:new Ledger('fixture'),turn:unavailable,callTool:unavailable,researchTools:[],authorPrompt:'',maxRevisions:0,seconds:5,gateway:null,seal:unavailable,registry:unavailable,newSession:()=> 'fixture',log:()=>{},savedPackReview:{target:unavailable,check:unavailable}})
-await run.restore(decodeCheckpoint(chat.checkpoint).state)
+// A saved chat reloads through its server-run owner; restoring sends nothing.
+const run=new SavedChatRun(chat.id,{...chat,checkpoint:decodeCheckpoint(chat.checkpoint)},{project:'/project',client:unavailable,prepare:unavailable,reconcile:unavailable,pin:unavailable,problem:unavailable})
 const state=run.getSnapshot()
 assert.equal(work,0)
 assert.equal(state.candidates.length,2)
