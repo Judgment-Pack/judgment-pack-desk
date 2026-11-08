@@ -48,18 +48,8 @@ func (s *Server) exchangeReplay(ctx context.Context, f exchangeCatalog.ReplayInp
 	if err != nil {
 		return nil, err
 	}
-	var caps struct {
-		Version          int
-		Command, Instant string
-		DialectVersions  []int
-		FormatVersions   []string
-		Report           struct {
-			Version    int
-			Binding    []string
-			ExitStatus struct{ Reading, Refusal, Finding, CouldNotRun int }
-		}
-	}
-	if code != 0 || json.Unmarshal(raw, &caps) != nil || caps.Version != 1 || caps.Command != "verify-preparation" || caps.Instant != "preparation.verifiedAt" || caps.Report.Version != 1 || !slices.Equal(caps.Report.Binding, []string{"not-checked"}) || caps.Report.ExitStatus.Reading != 0 || caps.Report.ExitStatus.Refusal != 1 || caps.Report.ExitStatus.Finding != 2 || caps.Report.ExitStatus.CouldNotRun != 3 {
+	caps, ok := preparationVerifierCapabilities(raw, code)
+	if !ok {
 		return nil, errors.New("Runner does not support the required offline verification contract")
 	}
 	var dialect struct {
@@ -106,20 +96,52 @@ func (s *Server) exchangeReplay(ctx context.Context, f exchangeCatalog.ReplayInp
 		return nil, err
 	}
 	if code != 0 {
-		return nil, preparationReplayFailure(raw, code)
+		return nil, preparationReplayFailure(raw, code, caps.Version)
 	}
 	return raw, nil
 }
 
+type preparationVerifierCaps struct {
+	Version          int
+	Command, Instant string
+	DialectVersions  []int
+	FormatVersions   []string
+	Report           struct {
+		Version    int
+		Binding    []string
+		ExitStatus struct{ Reading, Refusal, Finding, CouldNotRun int }
+	}
+}
+
+// Interface 1 is Runner v0.24.0's; interface 2 (Runner v0.27.0, which this
+// release pins) extends only the declared refusal vocabulary. The report
+// members, binding and exit statuses are the same in both, and the report
+// version matches the interface version.
+func preparationVerifierCapabilities(raw []byte, code int) (preparationVerifierCaps, bool) {
+	var caps preparationVerifierCaps
+	if code != 0 || json.Unmarshal(raw, &caps) != nil {
+		return caps, false
+	}
+	ok := (caps.Version == 1 || caps.Version == 2) && caps.Report.Version == caps.Version &&
+		caps.Command == "verify-preparation" && caps.Instant == "preparation.verifiedAt" &&
+		slices.Equal(caps.Report.Binding, []string{"not-checked"}) &&
+		caps.Report.ExitStatus.Reading == 0 && caps.Report.ExitStatus.Refusal == 1 &&
+		caps.Report.ExitStatus.Finding == 2 && caps.Report.ExitStatus.CouldNotRun == 3
+	return caps, ok
+}
+
 // Only protocol codes cross the process boundary. Reject mixed, extended, or
 // exit-inconsistent reports instead of displaying subprocess text as a finding.
-func preparationReplayFailure(raw []byte, code int) error {
+func preparationReplayFailure(raw []byte, code, version int) error {
 	invalid := errors.New("Invalid preparation verification report")
 	var report map[string]string
 	if json.Unmarshal(raw, &report) != nil || len(report) != 2 {
 		return invalid
 	}
 	kind, known := "refusal", []string{"input-over-bound", "input-malformed", "kind-unread"}
+	if version == 2 {
+		known = append(known, "capability-unsupported", "profile-unsupported")
+	}
 	if code == 2 {
 		kind = "finding"
 		known = []string{"profile-mismatch", "parameter-invalid", "read-failed", "acquisition-missing", "acquisition-unexpected", "acquisition-invalid", "acquisition-stale", "acquisition-sessions", "calculation-invalid", "admission-refused", "preparation-differs"}

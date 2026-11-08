@@ -339,10 +339,16 @@ func TestAssistantDialectRecipeQueuedAuthority(t *testing.T) {
 			if elapsed := time.Since(started); elapsed < draftWorkflowCreatorWait {
 				t.Fatal("held window refused before its bound", elapsed)
 			}
-			// Past the bound the refusal is the worded, retryable 409.
+			// Past the bound the refusal is worded and retryable: with the
+			// storage line on, the 409 for a transaction held past the wait;
+			// with it off, v0.13.2's 503 for the busy drafts folder.
 			w := policyCall(s, token, "DELETE", "/api/dialect-drafts/draft_"+strings.Repeat("a", 32), nil)
-			if w.Code != 409 || !strings.Contains(w.Body.String(), "Storage is busy with another request; try again.") {
-				t.Fatal("held window not answered with the worded 409", w.Code, w.Body.String())
+			if storageLineOn() {
+				if w.Code != 409 || !strings.Contains(w.Body.String(), "Storage is busy with another request; try again.") {
+					t.Fatal("held window not answered with the worded 409", w.Code, w.Body.String())
+				}
+			} else if w.Code != 503 || w.Header().Get("Retry-After") != "1" || !strings.Contains(w.Body.String(), "Dialect drafts are being saved. Try again shortly.") {
+				t.Fatal("held window not answered with v0.13.2's worded 503", w.Code, w.Body.String())
 			}
 		})
 	}
