@@ -531,6 +531,9 @@ func TestRetainedD4aCustodyDistinctMappingDomains(t *testing.T) {
 // Handwritten transport peers exercise the generated host entry point. They
 // establish no released Runtime semantics or Gateway signature qualification.
 func TestRetainedD4aSelectedProfilesIndependentOrdinaryBounds(t *testing.T) {
+	if os.Getenv("JPS_TEST_GATEWAY_BUNDLE") == "" {
+		t.Skip("requires explicitly selected scratch Gateway bundle")
+	}
 	for _, scenario := range []string{"exact-listing", "selected-array-one-over", "listing-array-one-over"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, _ := newTestServer(t, false)
