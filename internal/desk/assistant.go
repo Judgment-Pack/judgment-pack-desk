@@ -1281,9 +1281,11 @@ type keyRequest struct {
 }
 
 // refuseUnusableStore answers every key endpoint where custody was not
-// established. One place, so a new handler cannot forget it.
+// established. One place, so a new handler cannot forget it. A Server that
+// New did not build has no store, so no store problem to name: the storage
+// read-only gate, which also calls this, then keeps its own refusal.
 func (s *Server) refuseUnusableStore(w http.ResponseWriter) bool {
-	if s.assistant.usable() {
+	if s.assistant == nil || s.assistant.usable() {
 		return false
 	}
 	writeJSONCoded(w, http.StatusConflict, CodeAssistantUnusableStore,

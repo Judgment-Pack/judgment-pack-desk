@@ -588,3 +588,31 @@ func TestStorageStatusEncodingFailureReturnsSmallUnavailable(t *testing.T) {
 		t.Fatal("unbounded/partial fallback", w.Code, w.Body.Len())
 	}
 }
+
+// The read-only gate names an unusable private store's refusal, and keeps the
+// generic pause for a Server that has no store at all (one New did not build),
+// rather than reading the absent store.
+func TestStorageReadOnlyGateWithAndWithoutAStore(t *testing.T) {
+	sessions, err := newSessionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sessions.close)
+	for _, tc := range []struct {
+		name   string
+		store  *assistantStore
+		status int
+		code   string
+	}{{"no-store", nil, 503, ""}, {"unusable-store", &assistantStore{problem: errors.New("unsafe directory")}, 409, CodeAssistantUnusableStore}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{cfg: Config{Token: testToken}, sessions: sessions, storageReadOnly: true, assistant: tc.store}
+			token := policyTestSession(t, s)
+			r := httptest.NewRequest("GET", "/api/storage", nil)
+			r.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			if !s.serveStorageReadOnly(w, r) || w.Code != tc.status || tc.code != "" && !strings.Contains(w.Body.String(), tc.code) {
+				t.Fatal("read-only gate", w.Code, w.Body.String())
+			}
+		})
+	}
+}
