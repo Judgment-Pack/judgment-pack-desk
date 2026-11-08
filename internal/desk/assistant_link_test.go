@@ -250,7 +250,7 @@ func TestAssistantLinkActualProducersAndProjection(t *testing.T) {
 				delta := map[string]any{"role": "assistant", "content": "The exact retained page text was read."}
 				if n == 1 {
 					finish = "tool_calls"
-					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "link-call", "type": "function", "function": map[string]any{"name": "read_link", "arguments": `{"url":"example.org/report#alpha-beta","find":"alpha beta"}`}}}}
+					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "link-call", "type": "function", "function": map[string]any{"name": runcontext.WireName("desk-link", assistantLinkTool), "arguments": `{"url":"example.org/report#alpha-beta","find":"alpha beta"}`}}}}
 				}
 				raw := assistantChatJSON(map[string]any{"id": "link-fixture", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}})
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -262,15 +262,17 @@ func TestAssistantLinkActualProducersAndProjection(t *testing.T) {
 			}
 			f := newAssistantLinkFixture(t, actual, "provided", "work", u.server.URL)
 			if engine != "api" {
-				peer := strings.Replace(assistantExecutionCodexPeer, "else: tool(offered('get_schema'),{})", "else: tool(offered('read_link'),{'url':'example.org/report#alpha-beta','find':'alpha beta'})", 1)
+				peer := strings.Replace(assistantExecutionCodexPeer, "else: tool(offered('get_schema'),{})", "else: tool(offered('desk-link__read_link'),{'url':'example.org/report#alpha-beta','find':'alpha beta'})", 1)
 				if engine == "read-child" {
 					peer = strings.Replace(peer, "if mode=='delegate' and index==1:\n   tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})", `if mode=='normal' and index==1: tool(offered('delegate_tasks'),{'tasks':[{'title':'Read supplied page','objective':'Read only the supplied page and report exact retained evidence.','profile':'review'}]})
-  elif mode=='normal' and index==2: tool(offered('read_link'),{'url':'example.org/report#alpha-beta','find':'alpha beta'})
+  elif mode=='normal' and index==2: tool(offered('desk-link__read_link'),{'url':'example.org/report#alpha-beta','find':'alpha beta'})
   elif mode=='normal' and index>=3: finish()`, 1)
 					peer = strings.Replace(peer, "if mode=='delegate' and index==2:", "if mode=='normal' and index==2:", 1)
 				}
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(f.trace), "peer.py"), []byte(peer), 0600))
 			}
+			assistantExternalEvidenceAdmit(t, f)
+			assistantExternalEvidenceApproved(t, f, "desk-link")
 			x := assistantExecutionOpen(t, f.s, f.e)
 			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 			defer cancel()
@@ -493,7 +495,7 @@ func TestAssistantLinkActualRefusalEvents(t *testing.T) {
 				delta := map[string]any{"role": "assistant", "content": "Search was refused."}
 				if requests.Add(1) == 1 {
 					finish = "tool_calls"
-					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "refused-search", "type": "function", "function": map[string]any{"name": "read_link", "arguments": vector.arguments}}}}
+					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "refused-search", "type": "function", "function": map[string]any{"name": runcontext.WireName("desk-link", assistantLinkTool), "arguments": vector.arguments}}}}
 				}
 				raw := assistantChatJSON(map[string]any{"id": "refusal-fixture", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}})
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -503,7 +505,15 @@ func TestAssistantLinkActualRefusalEvents(t *testing.T) {
 			if vector.noConfig {
 				assistantRunMust(t, os.WriteFile(f.s.deskConfigPath(), []byte(`{"deskConfigVersion":1,"research":{"documents":null}}`), 0600))
 			}
+			// Refused by Desk's own read, not because an unapproved tool was never
+			// offered. Without research configuration the source is not reviewable,
+			// so it is never offered: that is the refusal.
+			assistantExternalEvidenceAdmit(t, f)
+			if !vector.noConfig {
+				assistantExternalEvidenceApproved(t, f, "desk-link")
+			}
 			x := assistantExecutionOpen(t, f.s, f.e)
+			assistantSourceToolOffered(t, f, x, "desk-link", assistantLinkTool, !vector.noConfig)
 			assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
 			record := assistantExecutionRecord(t, f.e)
 			refused := false
@@ -512,7 +522,7 @@ func TestAssistantLinkActualRefusalEvents(t *testing.T) {
 				raw, err := assistantRunEventBytes(held.Event)
 				assistantRunMust(t, err)
 				events = append(events, raw)
-				if result := held.Event.ToolResult; result != nil && result.Name == assistantLinkTool {
+				if result := held.Event.ToolResult; result != nil && result.Name == runcontext.WireName("desk-link", assistantLinkTool) {
 					refused = result.IsError
 				}
 			}
@@ -1116,5 +1126,25 @@ func assistantLinkExportWindow(t *testing.T, f *assistantSearchFixture, index in
 		assistantRunMust(t, err)
 		fixture := map[string]any{"name": name, "object": json.RawMessage(packet), "attachment": record.DomainOutputs[0].Link.Attachment, "pin": map[string]any{"url": held.Gateway.URL, "authority": held.Gateway.Authority, "signer": map[string]string{"algorithm": "ed25519", "public": held.Gateway.Public}}, "arguments": arguments, "results": results}
 		assistantRunMust(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("window-%02d.json", index)), assistantChatJSON(fixture), 0600))
+	}
+}
+
+// assistantSourceToolOffered checks that an approved external source tool is
+// offered to the run as a sourced tool, so a refusal is Desk's and not the
+// Agent's answer to an unknown tool; or, when want is false, that the source
+// is not reviewable and its tool is not offered.
+func assistantSourceToolOffered(t *testing.T, f *assistantSearchFixture, x *assistantExecution, adapter, name string, want bool) {
+	t.Helper()
+	if !want {
+		if row := assistantSourceTestRow(t, assistantSourceTestView(t, f.s, f.token), adapter); row.Status == "review-required" || row.Status == "approved" {
+			t.Fatal("unconfigured source became reviewable", adapter, row.Status)
+		}
+	}
+	offered := false
+	for _, tool := range x.Run.HostTools {
+		offered = offered || tool.Name == name && tool.Source != nil
+	}
+	if offered != want {
+		t.Fatal("source tool offer changed", name, offered)
 	}
 }

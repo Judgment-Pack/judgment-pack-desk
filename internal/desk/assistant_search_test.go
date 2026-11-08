@@ -188,7 +188,7 @@ func newAssistantSearchFixtureWithChat(t *testing.T, engine, choice, phase strin
 	f.e = assistantChatResave(t, f.s, f.token, old, string(assistantDocumentFixtureJSON(t, chat)), 201)
 	if engine == "codex" {
 		fixture := filepath.Dir(trace)
-		peer := strings.Replace(assistantExecutionCodexPeer, "else: tool(offered('get_schema'),{})", "else: tool(offered('search_sources'),{'query':'public policy'})", 1)
+		peer := strings.Replace(assistantExecutionCodexPeer, "else: tool(offered('get_schema'),{})", "else: tool(offered('desk-search__search_sources'),{'query':'public policy'})", 1)
 		assistantRunMust(t, os.WriteFile(filepath.Join(fixture, "peer.py"), []byte(peer), 0600))
 		python := os.Getenv("JPS_TEST_PYTHON")
 		// Replace the inherited peer wrapper's ambient interpreter before its first
@@ -508,7 +508,7 @@ func TestAssistantSearchActualProducersAndProjection(t *testing.T) {
 				delta := map[string]any{"role": "assistant", "content": "Search found leads only; no pages were read."}
 				if n == 1 {
 					finish = "tool_calls"
-					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "search-call", "type": "function", "function": map[string]any{"name": "search_sources", "arguments": `{"query":"public policy"}`}}}}
+					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "search-call", "type": "function", "function": map[string]any{"name": runcontext.WireName("desk-search", assistantSearchTool), "arguments": `{"query":"public policy"}`}}}}
 				}
 				raw := assistantChatJSON(map[string]any{"id": "search-fixture", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}})
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -521,13 +521,15 @@ func TestAssistantSearchActualProducersAndProjection(t *testing.T) {
 			f := newAssistantSearchFixture(t, actual, "research", "work", u.server.URL)
 			if engine == "research-child" {
 				peer := strings.Replace(assistantExecutionCodexPeer, "if mode=='delegate' and index==1:\n   tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})", `if mode=='normal' and index==1: tool(offered('delegate_tasks'),{'tasks':[{'title':'Find public leads','objective':'Search public policy. Search leads are not page evidence.','profile':'research'}]})
-  elif mode=='normal' and index==2: tool(offered('search_sources'),{'query':'public policy'})
+  elif mode=='normal' and index==2: tool(offered('desk-search__search_sources'),{'query':'public policy'})
   elif mode=='normal' and index>=3: finish()`, 1)
 				peer = strings.Replace(peer, "if mode=='delegate' and index==2:", "if mode=='normal' and index==2:", 1)
 				// A research report may have no findings/citations when only leads were
 				// searched. It explicitly records that no source page was read.
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(f.trace), "peer.py"), []byte(peer), 0600))
 			}
+			assistantExternalEvidenceAdmit(t, f)
+			assistantExternalEvidenceApproved(t, f, "desk-search")
 			x := assistantExecutionOpen(t, f.s, f.e)
 			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 			defer cancel()

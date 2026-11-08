@@ -84,6 +84,22 @@ func newAssistantWebsiteFixture(t *testing.T, engine, choice, phase, upstream st
 	t.Setenv("JPACK_DESK_GATEWAY_MANIFEST_SHA256", digestOf(manifestRaw))
 	return f
 }
+
+// assistantWebsiteCatalogSetup associates the controlled fixture with its
+// verified companion manifest and observes the complete catalog through the
+// explicit setup route, as a person does before the website source can be
+// reviewed. Approval review cannot create this witness.
+func assistantWebsiteCatalogSetup(t *testing.T, f *assistantSearchFixture) {
+	t.Helper()
+	manifest, err := assistantSourceManifest(f.s.localGateway.bundle)
+	assistantRunMust(t, err)
+	f.s.localGateway.mu.Lock()
+	f.s.localGateway.launchBundleDigest = digestOf(manifest)
+	f.s.localGateway.mu.Unlock()
+	if setup := policyCall(f.s, f.token, "POST", "/api/connections/catalog", map[string]any{}); setup.Code != 200 {
+		t.Fatal("explicit website catalog setup failed", setup.Code, setup.Body.String())
+	}
+}
 func (f *assistantSearchFixture) invokeWebsite(t *testing.T, call string, root bool, raw string) runcontext.ToolResult {
 	t.Helper()
 	ctx := runcontext.WithCallID(t.Context(), call)
@@ -188,7 +204,7 @@ func TestAssistantWebsiteActualRefusalEvents(t *testing.T) {
 				delta := map[string]any{"role": "assistant", "content": "Search was refused."}
 				if requests.Add(1) == 1 {
 					finish = "tool_calls"
-					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "refused-search", "type": "function", "function": map[string]any{"name": "explore_website", "arguments": vector.arguments}}}}
+					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "refused-search", "type": "function", "function": map[string]any{"name": runcontext.WireName("desk-website", assistantWebsiteTool), "arguments": vector.arguments}}}}
 				}
 				raw := assistantChatJSON(map[string]any{"id": "refusal-fixture", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}})
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -207,7 +223,16 @@ func TestAssistantWebsiteActualRefusalEvents(t *testing.T) {
 					}
 				}
 			}
+			// Refused by Desk's own discovery, not because an unapproved tool was
+			// never offered. Without research configuration the source is not
+			// reviewable, so it is never offered: that is the refusal.
+			assistantExternalEvidenceAdmit(t, f)
+			assistantWebsiteCatalogSetup(t, f)
+			if !vector.noConfig {
+				assistantExternalEvidenceApproved(t, f, "desk-website")
+			}
 			x := assistantExecutionOpen(t, f.s, f.e)
+			assistantSourceToolOffered(t, f, x, "desk-website", assistantWebsiteTool, !vector.noConfig)
 			assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
 			record := assistantExecutionRecord(t, f.e)
 			refused := false
@@ -216,7 +241,7 @@ func TestAssistantWebsiteActualRefusalEvents(t *testing.T) {
 				raw, err := assistantRunEventBytes(held.Event)
 				assistantRunMust(t, err)
 				events = append(events, raw)
-				if result := held.Event.ToolResult; result != nil && result.Name == assistantWebsiteTool {
+				if result := held.Event.ToolResult; result != nil && result.Name == runcontext.WireName("desk-website", assistantWebsiteTool) {
 					refused = result.IsError
 				}
 			}
@@ -245,9 +270,9 @@ func TestAssistantWebsiteActualProducers(t *testing.T) {
 				finish := "stop"
 				delta := map[string]any{"role": "assistant", "content": "Retained exact page evidence."}
 				if request <= 2 {
-					name, args := assistantWebsiteTool, `{"url":"example.org/report"}`
+					name, args := runcontext.WireName("desk-website", assistantWebsiteTool), `{"url":"example.org/report"}`
 					if request == 2 {
-						name, args = assistantLinkTool, `{"url":"https://example.org/child-0","find":"alpha beta"}`
+						name, args = runcontext.WireName("desk-link", assistantLinkTool), `{"url":"https://example.org/child-0","find":"alpha beta"}`
 					}
 					finish = "tool_calls"
 					delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": fmt.Sprint("call", request), "type": "function", "function": map[string]any{"name": name, "arguments": args}}}}
@@ -262,8 +287,8 @@ func TestAssistantWebsiteActualProducers(t *testing.T) {
 			}
 			f := newAssistantWebsiteFixture(t, actual, "research", "work", upstream.server.URL)
 			if engine != "api" {
-				peer := strings.Replace(assistantExecutionCodexPeer, "else: tool(offered('get_schema'),{})", "else: tool(offered('explore_website'),{'url':'example.org/report'},call='map',rpc='map-rpc')", 1)
-				peer = strings.Replace(peer, "elif not method:\n  log({'type':'answer','answer':q})", "elif not method:\n  log({'type':'answer','answer':q})\n  if q.get('id')=='map-rpc':\n   tool(offered('read_link'),{'url':'https://example.org/child-0','find':'alpha beta'},call='page',rpc='page-rpc');continue", 1)
+				peer := strings.Replace(assistantExecutionCodexPeer, "else: tool(offered('get_schema'),{})", "else: tool(offered('desk-website__explore_website'),{'url':'example.org/report'},call='map',rpc='map-rpc')", 1)
+				peer = strings.Replace(peer, "elif not method:\n  log({'type':'answer','answer':q})", "elif not method:\n  log({'type':'answer','answer':q})\n  if q.get('id')=='map-rpc':\n   tool(offered('desk-link__read_link'),{'url':'https://example.org/child-0','find':'alpha beta'},call='page',rpc='page-rpc');continue", 1)
 				if engine == "research-child" {
 					peer = strings.Replace(peer, "if mode=='delegate' and index==1:\n   tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})", `if mode=='normal' and index==1:
    tool(offered('delegate_tasks'),{'tasks':[{'title':'Explore supplied site','objective':'Explore only example.org/report and read its discovered child-0 page.','profile':'research'}]})
@@ -272,8 +297,14 @@ func TestAssistantWebsiteActualProducers(t *testing.T) {
 				}
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(f.trace), "peer.py"), []byte(peer), 0600))
 			}
+			assistantExternalEvidenceAdmit(t, f)
+			assistantWebsiteCatalogSetup(t, f)
+			assistantExternalEvidenceApproved(t, f, "desk-website")
+			assistantExternalEvidenceApproved(t, f, "desk-link")
 			x := assistantExecutionOpen(t, f.s, f.e)
-			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+			// Two approved source calls, each checked against its current approval
+			// and receipt, plus a research child: allow for a slow runner.
+			ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
 			record := assistantExecutionRecord(t, f.e)
@@ -289,8 +320,12 @@ func TestAssistantWebsiteActualProducers(t *testing.T) {
 				t.Fatal("native callback lost")
 			}
 			if engine == "research-child" {
-				// Handwritten resumed-refusal variant of the actual child result:
-				// exact map receipts survive, while its original host result failed.
+				// On Agent v0.13.2 an approved source's call is durable: the Agent
+				// records its outcome in the canonical checkpoint. A refused host
+				// result beside a completed durable result is therefore not a state
+				// a lost acknowledgement can leave, and Desk must not project it.
+				// (Before sourced calls, this handwritten variant was projected as
+				// a recovered failed child read.)
 				var refused assistantRunRecord
 				assistantRunMust(t, json.Unmarshal(assistantChatJSON(record), &refused))
 				refused.State = "complete"
@@ -303,37 +338,21 @@ func TestAssistantWebsiteActualProducers(t *testing.T) {
 				op := assistantDialectOperation(refused, refused.Websites[0].HostOperationID)
 				var result assistantHostResult
 				assistantRunMust(t, readAssistantHostReceipt(op.Result, &result))
-				result.Result = assistantHostFailure(errors.New("fixture lost final acknowledgement")).Value().JSON()
+				var opIntent assistantHostIntent
+				assistantRunMust(t, readAssistantHostReceipt(op.Intent, &opIntent))
+				if opIntent.DurableDispatchID == "" {
+					t.Fatal("approved child website call was not durable")
+				}
+				result.ExternalReadEvidence, result.ExternalFailure = nil, assistantExternalFailureBytes(errors.New("fixture lost final acknowledgement"))
+				retained, ok := assistantExternalRetainedFailure(result.ExternalFailure)
+				if !ok {
+					t.Fatal("fixture failure not retainable")
+				}
+				result.Result = assistantHostFailure(retained).Value().JSON()
 				op.Result = assistantChatJSON(result)
 				op.State = "refused"
-				projected, err := compileAssistantChatProjection(f.e.source.Original, refused, "2026-10-21T00:00:00Z")
-				assistantRunMust(t, err)
-				var chat struct {
-					Checkpoint struct {
-						State struct {
-							Responses []struct {
-								Work struct {
-									Items []struct {
-										Name   string `json:"name"`
-										Status string `json:"status"`
-									} `json:"items"`
-								} `json:"work"`
-							} `json:"responses"`
-						} `json:"state"`
-					} `json:"checkpoint"`
-				}
-				assistantRunMust(t, json.Unmarshal(projected, &chat))
-				found := false
-				for _, item := range chat.Checkpoint.State.Responses[len(chat.Checkpoint.State.Responses)-1].Work.Items {
-					if item.Name == assistantWebsiteTool {
-						found = true
-						if item.Status != "failed" {
-							t.Fatal("recovered child refusal projected as completed work")
-						}
-					}
-				}
-				if !found {
-					t.Fatal("recovered child work row missing")
+				if _, err := compileAssistantChatProjection(f.e.source.Original, refused, "2026-10-21T00:00:00Z"); !errors.Is(err, errAssistantRunInvalid) {
+					t.Fatal("refused source call projected beside its completed durable result", err)
 				}
 			}
 			assistantRunMust(t, assistantRecipeImport(t, f.e, record))
