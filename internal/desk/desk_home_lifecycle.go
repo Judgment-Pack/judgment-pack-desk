@@ -31,7 +31,13 @@ var errDeskHomeMoveAfterStorage = errors.New("Desk home moves are not available 
 // (storageInstallationNames), even partly. A name Desk cannot rule out counts
 // as set up.
 func (s *Server) homeMoveStorageRefusal() error {
+	off := !s.deskOwner().storageLine
 	for _, name := range storageInstallationNames {
+		// v0.13.2's backups and restores make this lock too; with the storage
+		// line off it says nothing about storage being set up.
+		if off && name == ".data-transfer.lock" {
+			continue
+		}
 		if _, err := os.Lstat(filepath.Join(s.configDir, name)); !errors.Is(err, os.ErrNotExist) {
 			return errDeskHomeMoveAfterStorage
 		}

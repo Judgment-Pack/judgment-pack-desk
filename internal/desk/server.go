@@ -143,6 +143,10 @@ type Config struct {
 	DeskConfigDir string
 	// Logger receives subprocess stderr and relay diagnostics.
 	Logger *log.Logger
+	// StorageLine turns on the storage line (enrollment, census, custody,
+	// admission and limits). Off, Desk keeps v0.13.2's storage behaviour.
+	// JPACK_DESK_STORAGE_LINE=on turns it on too; see storage_line.go.
+	StorageLine bool
 }
 
 // Server is the HTTP handler and the owner of the file watcher.
@@ -318,6 +322,7 @@ type Server struct {
 	storageTransfersClosing     bool  // original transfer registry mutex
 	storageTransferCloseErr     error // first completed transfer failure; original registry mutex
 	storageStartupProviders     *dialectArtifactSelectedProviderPins
+	storageLine                 bool // the storage line runs; fixed in New (storage_line.go)
 	storageReadOnly             bool
 	storageProblem              error
 	storageStatusPressure       storageStatusPressureSlot
@@ -517,6 +522,7 @@ func New(cfg Config) (*Server, error) {
 		sessions:               sessions,
 		launches:               launches,
 		launchCookie:           launchCookieName(cfg.Port),
+		storageLine:            storageLineEnabled(cfg),
 	}
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
@@ -538,7 +544,12 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	ctx := context.Background()
-	if cfg.parent != nil {
+	if !s.storageLine {
+		if err := s.openLegacyInfrastructure(); err != nil {
+			s.Close()
+			return nil, err
+		}
+	} else if cfg.parent != nil {
 		var err error
 		s.assistant, err = s.borrowInfrastructure()
 		if err != nil {
@@ -594,7 +605,7 @@ func New(cfg Config) (*Server, error) {
 	s.assistant.logf = s.log.Printf
 	// Bind the actual same-descriptor home lifetime before any work/service
 	// lease. Children borrow only this original parent witness.
-	if s.cfg.parent == nil && s.homeLease != nil && s.assistant.usable() {
+	if s.storageLine && s.cfg.parent == nil && s.homeLease != nil && s.assistant.usable() {
 		if err := s.captureOriginalDialectRecoveryHome(); err != nil {
 			s.Close()
 			return nil, err
@@ -602,12 +613,14 @@ func New(cfg Config) (*Server, error) {
 	}
 	// Before the census: narrow a local gateway store an earlier Desk left at
 	// the inherited mask. What is not repaired stays for the census to refuse.
-	if s.cfg.parent == nil {
+	if s.storageLine && s.cfg.parent == nil {
 		if err := s.narrowLocalGatewayStore(); err != nil {
 			s.log.Printf("desk: the local gateway's store could not be made owner-only: %v", err)
 		}
 	}
-	if err := s.activateStorageBudgetStartup(ctx); err != nil {
+	if !s.storageLine {
+		// Off: no enrollment, census, admission or read-only start.
+	} else if err := s.activateStorageBudgetStartup(ctx); err != nil {
 		// Another project in an installation sealed to its first one is
 		// refused in words, not started read-only behind a generic pause.
 		if errors.Is(err, errDeskAnotherStartupProject) {
@@ -630,7 +643,7 @@ func New(cfg Config) (*Server, error) {
 		s.storageProblem = err
 		s.recordStorageStatusProblem(err)
 	}
-	if !s.storageReadOnly {
+	if s.storageLine && !s.storageReadOnly {
 		if err := s.prepareStorageAdmissionHandoff(ctx); err != nil {
 			s.storageReadOnly = true
 			s.storageProblem = err
