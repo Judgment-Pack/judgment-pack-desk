@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -32,6 +33,28 @@ type assistantCreationInput struct {
 	Contract    json.RawMessage
 	Fresh       func(context.Context) error
 	FreshLocked func(context.Context) error
+}
+
+// Native-engine pack creation is a stated v0.14.0 limitation (Desk #703). A
+// creation run carries no delegated children, so on Agent v0.13.2 the native
+// run has no provider-release capability; after its review Desk cannot prove
+// the provider released the run and quarantines the chat context. The
+// model-dispatching creation steps are therefore refused before admission:
+// nothing starts and no context is reserved. The release proof is unchanged.
+var errAssistantNativeCreation = errors.New("Native-engine pack creation is not available in this version: writing test cases and suggesting corrections need the API engine. Choose an API connection for this chat and try again.")
+
+func assistantNativeCreationRefusal(source assistantRunSource) error {
+	if source.Start.Purpose != "chat" || source.Connection.Assistant.Engine != "codex" {
+		return nil
+	}
+	action, err := readAssistantCreationAction(source.Request)
+	if err != nil {
+		return err
+	}
+	if action != nil && contains([]string{"establish-cases", "propose-correction"}, action.Kind) {
+		return errAssistantNativeCreation
+	}
+	return nil
 }
 
 func readAssistantCreationAction(raw []byte) (*assistantCreationAction, error) {

@@ -282,6 +282,10 @@ func assistantRunHTTPError(w http.ResponseWriter, err error) {
 		status = 503
 		code = CodeBadRequest
 		message = errAssistantRunUnavailable.Error()
+	case errors.Is(err, errAssistantNativeCreation):
+		status = 422
+		code = CodeBadRequest
+		message = errAssistantNativeCreation.Error()
 	case errors.Is(err, errAssistantRunInvalid):
 		status = 400
 		code = CodeBadRequest

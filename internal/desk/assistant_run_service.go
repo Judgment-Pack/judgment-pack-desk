@@ -153,6 +153,9 @@ func (h *assistantRunService) start(r *http.Request, start assistantRunStart) (a
 	if err != nil {
 		return assistantRunRecord{}, false, err
 	}
+	if err = assistantNativeCreationRefusal(source); err != nil {
+		return assistantRunRecord{}, false, err
+	}
 	// A fresh admission id is not permission to repeat this exact original
 	// request after an approved physical effect lost its canonical result.
 	_, err = store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {

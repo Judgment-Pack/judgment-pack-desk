@@ -2,6 +2,7 @@ package desk
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
 	"io"
@@ -307,13 +308,49 @@ func TestAssistantCreationActualNative(t *testing.T) {
 		}
 		return n
 	}
-	assistantCreationActualJourney(t, s, token, calls, func(document string) {
-		assistantRunMust(t, os.WriteFile(trace+".reply", []byte(assistantAuthoringProposalFixture(json.RawMessage(document))), 0600))
-	})
-	assistantRunMust(t, os.WriteFile(trace+".reply", []byte("I will use only the provided material."), 0600))
-	choice := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "research-choice", Choice: "provided"}, 6)
-	if calls() != 3 || choice.Creation != nil {
-		t.Fatal("native explicit research choice did not remain read-only")
+	// Model-free creation steps never open the native engine and still run.
+	recovered := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1)
+	if recovered.Creation == nil || recovered.Creation.Check == nil || !recovered.Creation.Check.Valid {
+		t.Fatal("recover did not validate exact retained proposal")
+	}
+	digest := recovered.Creation.CandidateDigest
+	assistantCreationRetainDraft(t, s, token)
+	assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "check", CandidateDigest: digest}, 2)
+	assistantRunMust(t, os.WriteFile(trace+".reply", []byte(assistantAuthoringProposalFixture(json.RawMessage(assistantCreationCasesDocument))), 0600))
+	assistantCreationNativeRefused(t, s, token, assistantCreationAction{Kind: "establish-cases", CandidateDigest: digest}, 3)
+	// propose-correction needs an established issue, which cannot exist here;
+	// TestAssistantNativeCreationRefusalScope covers its refusal.
+	// The refusals reserved and quarantined nothing: the chat admits more work.
+	checked := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "check", CandidateDigest: digest}, 4)
+	if checked.Creation == nil || checked.Creation.Check == nil || calls() != 0 {
+		t.Fatal("chat after a refused native creation review lost its check or reached the model", calls())
+	}
+}
+
+// Native-engine creation reviews are refused before admission (Desk #703): the
+// worded refusal repeats, no run is recorded and no model generation happens.
+func assistantCreationNativeRefused(t *testing.T, s *Server, token string, action assistantCreationAction, n int) {
+	t.Helper()
+	before := len(assistantAuthoringLedger(t, s).Runs)
+	start := assistantCreationActualStart(t, s, token, action, n)
+	for range 2 {
+		w := assistantBriefCall(s, token, "POST", "/api/assistant-runs", start)
+		var body struct {
+			Code  string `json:"code"`
+			Error string `json:"error"`
+		}
+		if w.Code != 422 || json.Unmarshal(w.Body.Bytes(), &body) != nil || body.Code != CodeBadRequest || body.Error != errAssistantNativeCreation.Error() || !strings.Contains(body.Error, "need the API engine") {
+			t.Fatal("native creation review was not refused in words before admission", action.Kind, w.Code, w.Body.String())
+		}
+	}
+	ledger := assistantAuthoringLedger(t, s)
+	if len(ledger.Runs) != before {
+		t.Fatal("a refused native creation review started a run", action.Kind)
+	}
+	for _, run := range ledger.Runs {
+		if run.AdmissionID == start.AdmissionID || run.Binding.RequestID == start.RequestID {
+			t.Fatal("a refused native creation review was recorded", action.Kind)
+		}
 	}
 }
 
@@ -537,5 +574,47 @@ func TestAssistantCreationFailedRetestRetainsIssue(t *testing.T) {
 			}
 			assistantRunMust(t, validateAssistantCreationReceipt(run))
 		}
+	}
+}
+
+// Runs without the companion Runtime. Only native-engine creation reviews are
+// refused; every API-engine creation step and every model-free native step is
+// admitted as before (Desk #703).
+func TestAssistantNativeCreationRefusalScope(t *testing.T) {
+	actions := map[string]string{
+		"recover":            `{"kind":"recover","messageId":"assistant-one","messageDigest":"` + strings.Repeat("a", 64) + `"}`,
+		"check":              `{"kind":"check","candidateDigest":"` + strings.Repeat("a", 64) + `"}`,
+		"retry-validation":   `{"kind":"retry-validation","candidateDigest":"` + strings.Repeat("a", 64) + `"}`,
+		"establish-cases":    `{"kind":"establish-cases","candidateDigest":"` + strings.Repeat("a", 64) + `"}`,
+		"propose-correction": `{"kind":"propose-correction","candidateDigest":"` + strings.Repeat("a", 64) + `","issueId":"invalid"}`,
+		"approve-correction": `{"kind":"approve-correction","candidateDigest":"` + strings.Repeat("a", 64) + `","issueId":"invalid","token":"` + strings.Repeat("b", 64) + `"}`,
+		"research-choice":    `{"kind":"research-choice","choice":"provided"}`,
+		"":                   ``,
+	}
+	for _, engine := range []string{"vercel", "codex"} {
+		for kind, creation := range actions {
+			request := `{"id":"creation-1","role":"user","kind":"message","text":"Explicit creation control"}`
+			if creation != "" {
+				request = `{"id":"creation-1","role":"user","kind":"message","text":"Explicit creation control","creation":` + creation + `}`
+			}
+			for _, purpose := range []string{"chat", "brief"} {
+				source := assistantRunSource{Start: assistantRunStart{Purpose: purpose}, Request: []byte(request)}
+				source.Connection.Assistant.Engine = engine
+				err := assistantNativeCreationRefusal(source)
+				refused := engine == "codex" && purpose == "chat" && (kind == "establish-cases" || kind == "propose-correction")
+				if refused != errors.Is(err, errAssistantNativeCreation) || !refused && err != nil {
+					t.Fatal("native creation refusal scope changed", engine, purpose, kind, err)
+				}
+			}
+		}
+	}
+	w := httptest.NewRecorder()
+	assistantRunHTTPError(w, errAssistantNativeCreation)
+	var body struct {
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	if w.Code != 422 || json.Unmarshal(w.Body.Bytes(), &body) != nil || body.Code != CodeBadRequest || body.Error != errAssistantNativeCreation.Error() {
+		t.Fatal("native creation refusal lost its worded 422", w.Code, w.Body.String())
 	}
 }

@@ -108,7 +108,11 @@ func assistantCreationMultipleCorrections(t *testing.T, native bool) {
 	if native && output != "" {
 		output = filepath.Join(output, "native")
 	}
-	for _, order := range [][]string{{"first", "last"}, {"last", "first"}} {
+	orders := [][]string{{"first", "last"}, {"last", "first"}}
+	if native {
+		orders = orders[:1] // the review is refused before either order matters
+	}
+	for _, order := range orders {
 		t.Run(order[0], func(t *testing.T) {
 			if output != "" {
 				dir := filepath.Join(output, order[0])
@@ -137,6 +141,16 @@ func assistantCreationMultipleCorrections(t *testing.T, native bool) {
 			recovered := assistantCreationContinuationRun(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1)
 			digest := recovered.Creation.CandidateDigest
 			assistantCreationRetainDraft(t, s, token)
+			if native {
+				// Native-engine creation reviews are a v0.14.0 limitation (Desk
+				// #703): refused before admission, with the chat left usable.
+				assistantCreationNativeRefused(t, s, token, assistantCreationAction{Kind: "establish-cases", CandidateDigest: digest}, 2)
+				checked := assistantCreationContinuationRun(t, s, token, assistantCreationAction{Kind: "check", CandidateDigest: digest}, 3)
+				if checked.Creation == nil || checked.Creation.Check == nil || count() != 0 {
+					t.Fatal("native chat after a refused creation review lost its check or reached the model")
+				}
+				return
+			}
 			established := assistantCreationContinuationRun(t, s, token, assistantCreationAction{Kind: "establish-cases", CandidateDigest: digest}, 2)
 			// Preserve canonical accepted event bytes; upstream normalization is
 			// recorded separately and never reconstructed from reviewer prose.

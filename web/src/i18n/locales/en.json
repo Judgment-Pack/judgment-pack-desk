@@ -6437,6 +6437,7 @@
   "Write your answer": "Write your answer",
   "Writing brief…": "Writing brief…",
   "Writing response…": "Writing response…",
+  "Writing test cases and suggesting corrections need an API connection in this version. Choose an API connection for this chat to continue; a ChatGPT subscription cannot run them yet.": "Writing test cases and suggesting corrections need an API connection in this version. Choose an API connection for this chat to continue; a ChatGPT subscription cannot run them yet.",
   "Written so far": "Written so far",
   "Yes": "Yes",
   "Yes / No": "Yes / No",
