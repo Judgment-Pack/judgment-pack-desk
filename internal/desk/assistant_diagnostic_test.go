@@ -23,6 +23,15 @@ func assistantDiagnosticFixture(t *testing.T, mode string) (*Server, string, *co
 	peer = strings.Replace(peer, "if mode=='delegate' and index==1:", "if mode=='prose': finish()\n  elif mode=='delegate' and index==1:", 1)
 	assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(trace), "peer.py"), []byte(peer), 0600))
 	assistantExecutionRuntimeFixture(t, s, e)
+	// The Runtime peer serves the diagnostic run admitted later, not the
+	// canceled fixture run it was written for, which dispatched no Runtime
+	// operation. It still answers only an operation the ledger holds exactly
+	// once, dispatched, before the frame arrives.
+	store, err := s.openChatData()
+	assistantRunMust(t, err)
+	config, _ := json.Marshal(map[string]string{"ledger": filepath.Join(store.root.Name(), e.writer.lease.store.name)})
+	assistantRunMust(t, store.root.Close())
+	assistantRunMust(t, os.WriteFile(filepath.Join(s.cfg.ProjectDir, "execution-fixture.json"), config, 0600))
 	s.assistantRunExecutor = nil
 	return s, token, m, trace
 }
