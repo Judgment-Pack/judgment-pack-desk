@@ -497,8 +497,48 @@ func TestAssistantExecutionRuntimePromptAndProjectRefusal(t *testing.T) {
 func TestAssistantExecutionPlanAndChildIntersection(t *testing.T) {
 	for _, phase := range []string{"plan", "work"} {
 		t.Run(phase, func(t *testing.T) {
-			s, _, e := assistantExecutionFixture(t, "http://127.0.0.1:1", phase)
+			// Agent v0.13.2 tells the gate the host and package tools, among
+			// them delegate_tasks, when the adapter's session opens
+			// (adapter.EnrollContext), before its first model request. Hold
+			// that request open while the phase is checked.
+			requested := make(chan struct{}, 1)
+			release := make(chan struct{})
+			u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case requested <- struct{}{}:
+				default:
+				}
+				select {
+				case <-release:
+				case <-r.Context().Done():
+					return
+				}
+				assistantBriefSSE(w, "No delegation needed.", "stop")
+			})
+			s, _, e := assistantExecutionFixture(t, u.server.URL, phase)
 			x := assistantExecutionOpen(t, s, e)
+			if x.Run.Gate.AdmitHost("delegate_tasks") == nil {
+				t.Fatal("delegation admitted before the session enrolled it")
+			}
+			ran := make(chan error, 1)
+			go func() { ran <- x.Adapter.Run(t.Context(), x.Run) }()
+			finish := sync.OnceFunc(func() {
+				close(release)
+				select {
+				case <-ran:
+				case <-time.After(30 * time.Second):
+					t.Error("session did not end")
+				}
+			})
+			defer finish()
+			select {
+			case <-requested:
+			case err := <-ran:
+				ran <- err
+				t.Fatal("session ended before its model request", err)
+			case <-time.After(15 * time.Second):
+				t.Fatal("session did not reach its model request")
+			}
 			if x.Run.Gate.AdmitHost("delegate_tasks") != nil {
 				t.Fatal("canonical delegation interaction missing from phase")
 			}
