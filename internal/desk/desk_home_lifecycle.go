@@ -31,7 +31,7 @@ var errDeskHomeMoveAfterStorage = errors.New("Desk home moves are not available 
 // (storageInstallationNames), even partly. A name Desk cannot rule out counts
 // as set up.
 func (s *Server) homeMoveStorageRefusal() error {
-	off := !s.deskOwner().storageLine
+	off := s.deskOwner().storageLineOff
 	for _, name := range storageInstallationNames {
 		// v0.13.2's backups and restores make this lock too; with the storage
 		// line off it says nothing about storage being set up.

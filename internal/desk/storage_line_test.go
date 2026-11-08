@@ -27,8 +27,8 @@ func TestStorageLineOffKeepsV0132Storage(t *testing.T) {
 	t.Setenv(storageLineEnv, "")
 	config := t.TempDir()
 	s, ts, _ := assistantServerIn(t, config)
-	if s.storageLine || s.storageEnrollment != nil || s.storageConstruction != nil || s.storageInfrastructure != nil || s.storageReadOnly {
-		t.Fatalf("storage line ran while off: line=%v enrollment=%v readOnly=%v problem=%v", s.storageLine, s.storageEnrollment != nil, s.storageReadOnly, s.storageProblem)
+	if !s.storageLineOff || s.storageEnrollment != nil || s.storageConstruction != nil || s.storageInfrastructure != nil || s.storageReadOnly {
+		t.Fatalf("storage line ran while off: off=%v enrollment=%v readOnly=%v problem=%v", s.storageLineOff, s.storageEnrollment != nil, s.storageReadOnly, s.storageProblem)
 	}
 	status, initial := chatRequest(t, ts, "GET", "", "", true, "")
 	if status != 200 {
@@ -72,7 +72,7 @@ func TestStorageLineOnThenOffOpensChats(t *testing.T) {
 	config, project := t.TempDir(), t.TempDir()
 	t.Setenv(storageLineEnv, "on")
 	s, ts, _ := assistantServerAt(t, project, config)
-	if !s.storageLine || s.storageEnrollment == nil {
+	if s.storageLineOff || s.storageEnrollment == nil {
 		t.Skip("storage line did not enroll here", s.storageProblem)
 	}
 	_, initial := chatRequest(t, ts, "GET", "", "", true, "")
@@ -87,7 +87,7 @@ func TestStorageLineOnThenOffOpensChats(t *testing.T) {
 	}
 	t.Setenv(storageLineEnv, "")
 	off, ts2, _ := assistantServerAt(t, project, config)
-	if off.storageLine || off.storageReadOnly {
+	if !off.storageLineOff || off.storageReadOnly {
 		t.Fatal("off start", off.storageProblem)
 	}
 	status, read := chatRequest(t, ts2, "GET", "", "", true, "")

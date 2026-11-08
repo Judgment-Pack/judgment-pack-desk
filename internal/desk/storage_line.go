@@ -21,7 +21,7 @@ const storageLineEnv = "JPACK_DESK_STORAGE_LINE"
 // never mixes enrolled and legacy servers.
 func storageLineEnabled(cfg Config) bool {
 	if cfg.parent != nil {
-		return cfg.parent.storageLine
+		return !cfg.parent.storageLineOff
 	}
 	return cfg.StorageLine || os.Getenv(storageLineEnv) == "on"
 }
@@ -62,7 +62,7 @@ func (s *Server) openLegacyInfrastructure() error {
 // storageLineOffStatus answers /api/storage/status while the line is off:
 // nothing is measured, so the page shows no accounting, limits or notice.
 func (s *Server) storageLineOffStatus(w http.ResponseWriter) bool {
-	if s.deskOwner().storageLine {
+	if !s.deskOwner().storageLineOff {
 		return false
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"version": 1, "line": "off", "servedAt": storageStatusTime(time.Now())})
@@ -72,7 +72,7 @@ func (s *Server) storageLineOffStatus(w http.ResponseWriter) bool {
 // refuseStorageLineOff refuses the storage line's own routes (limits and
 // retention) while the line is off.
 func (s *Server) refuseStorageLineOff(w http.ResponseWriter) bool {
-	if s.deskOwner().storageLine {
+	if !s.deskOwner().storageLineOff {
 		return false
 	}
 	writeJSONCoded(w, http.StatusNotFound, CodeNotFound, "Storage limits and retention are not available in this release.")
