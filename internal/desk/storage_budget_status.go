@@ -988,6 +988,9 @@ func (s *Server) handleStorageStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Storage status does not accept query or body inputs.")
 		return
 	}
+	if s.storageLineOffStatus(w) {
+		return
+	}
 	s.writeStorageStatus(w, s.readStorageStatus(r.Context()))
 }
 

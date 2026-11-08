@@ -218,7 +218,7 @@ func storagePolicyHTTPError(w http.ResponseWriter, err error, mutation bool, noE
 	writeJSONCoded(w, 503, storageStatusUnknown, "Storage policy is unavailable. Preparation or original storage recovery may be required.")
 }
 func (s *Server) handleStoragePolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.guard(w, r) {
+	if !s.guard(w, r) || s.refuseStorageLineOff(w) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

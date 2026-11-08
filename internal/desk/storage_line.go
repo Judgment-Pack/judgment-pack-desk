@@ -2,8 +2,10 @@ package desk
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // storageLineEnv turns the storage line (first-use enrollment, the owner
@@ -55,4 +57,24 @@ func (s *Server) openLegacyInfrastructure() error {
 		}
 	}
 	return nil
+}
+
+// storageLineOffStatus answers /api/storage/status while the line is off:
+// nothing is measured, so the page shows no accounting, limits or notice.
+func (s *Server) storageLineOffStatus(w http.ResponseWriter) bool {
+	if s.deskOwner().storageLine {
+		return false
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"version": 1, "line": "off", "servedAt": storageStatusTime(time.Now())})
+	return true
+}
+
+// refuseStorageLineOff refuses the storage line's own routes (limits and
+// retention) while the line is off.
+func (s *Server) refuseStorageLineOff(w http.ResponseWriter) bool {
+	if s.deskOwner().storageLine {
+		return false
+	}
+	writeJSONCoded(w, http.StatusNotFound, CodeNotFound, "Storage limits and retention are not available in this release.")
+	return true
 }

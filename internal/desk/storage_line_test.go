@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,10 @@ func requireStorageLine(t testing.TB) {
 		t.Skip("the storage line is off; this runs in the storage lane (" + storageLineEnv + "=on)")
 	}
 }
+
+// storageLineOn says whether this process runs the storage line, for a test
+// whose v0.13.2 part runs either way and whose storage part runs only on.
+func storageLineOn() bool { return os.Getenv(storageLineEnv) == "on" }
 
 // Off, Desk keeps v0.13.2's storage: no enrollment, census or admission, chat
 // history where v0.13.2 keeps it, no storage-line files, and a second Desk on
@@ -39,6 +44,17 @@ func TestStorageLineOffKeepsV0132Storage(t *testing.T) {
 	for _, name := range []string{storageRecordName, storageClaimName, storageReadyName, storageAnchorName} {
 		if _, err := os.Lstat(filepath.Join(config, name)); !os.IsNotExist(err) {
 			t.Fatalf("storage-line file %s made while off: %v", name, err)
+		}
+	}
+	// The page reads the line as off, and the line's own routes refuse.
+	code, raw := deskCall(t, ts, "GET", "/api/storage/status", "", "", true)
+	var answer map[string]any
+	if code != 200 || json.Unmarshal(raw, &answer) != nil || answer["line"] != "off" || answer["version"] != float64(1) || len(answer) != 3 {
+		t.Fatalf("storage status with the line off: %d %s", code, raw)
+	}
+	for _, path := range []string{"/api/storage/policy", "/api/storage/retention"} {
+		if code, raw = deskCall(t, ts, "GET", path, "", "", true); code != 404 {
+			t.Fatalf("%s with the line off: %d %s", path, code, raw)
 		}
 	}
 	other, ts2, _ := assistantServerIn(t, config)

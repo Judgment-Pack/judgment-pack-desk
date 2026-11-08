@@ -655,7 +655,7 @@ func storageRetentionHTTPDecode(raw []byte, v any) error {
 	return nil
 }
 func (s *Server) handleStorageRetention(w http.ResponseWriter, r *http.Request) {
-	if !s.guard(w, r) {
+	if !s.guard(w, r) || s.refuseStorageLineOff(w) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
