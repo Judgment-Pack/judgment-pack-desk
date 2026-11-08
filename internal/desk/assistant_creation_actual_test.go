@@ -76,9 +76,15 @@ func assistantCreationActualStart(t *testing.T, s *Server, token string, action 
 	return assistantContextStartFixture(t, s, token, assistantRunStart{Purpose: "chat", OwnerID: "chat-one", RequestID: request, AdmissionID: request, Revision: digestOf(rows[0])})
 }
 
+// Profiling shows repeated strict validation of the retained ledger across
+// real-Runtime creation actions; a reviewed action measured over 15 seconds on a
+// loaded host. Bound each action consistently under variable CI and host load
+// while keeping all completion checks.
+const assistantCreationActionWait = 45 * time.Second
+
 func assistantCreationActualRun(t *testing.T, s *Server, token string, action assistantCreationAction, n int) assistantRunView {
 	t.Helper()
-	return assistantCreationActualRunWithin(t, s, token, action, n, 15*time.Second)
+	return assistantCreationActualRunWithin(t, s, token, action, n, assistantCreationActionWait)
 }
 
 func assistantCreationActualRunWithin(t *testing.T, s *Server, token string, action assistantCreationAction, n int, timeout time.Duration) assistantRunView {
@@ -345,7 +351,7 @@ func assistantCreationStopAt(t *testing.T, s *Server, token string, action assis
 	_ = os.Remove(marker)
 	start := assistantCreationActualStart(t, s, token, action, n)
 	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
-	deadline := time.Now().Add(12 * time.Second)
+	deadline := time.Now().Add(assistantCreationActionWait)
 	for {
 		if _, err := os.Stat(marker); err == nil {
 			break

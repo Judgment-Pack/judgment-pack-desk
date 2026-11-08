@@ -562,3 +562,43 @@ func TestAssistantCanonicalActivationCreationHostTransitions(t *testing.T) {
 		t.Fatal("host notice reused stale binding or duplicated", messages)
 	}
 }
+
+// A completion notice joins the host's own completing commit. Only a plain
+// message with the complete status is accepted, before any source or ledger
+// work, and it is stored as the root writer stores a handed event.
+func TestAssistantCanonicalHostNoticeShape(t *testing.T) {
+	store, binding, _, writer, record := canonicalActivationAdmitted(t)
+	e := &assistantRunExecution{record: record, writer: writer}
+	message := contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: "Creation review retained."}}
+	end := contract.RunEvent{End: &contract.RunEventEnd{Type: "end"}}
+	mixed := message
+	mixed.End = end.End
+	for name, call := range map[string]func() error{
+		"running": func() error { return e.canonicalHostStatus(t.Context(), "running", message) },
+		"end":     func() error { return e.canonicalHostStatus(t.Context(), "complete", end) },
+		"mixed":   func() error { return e.canonicalHostStatus(t.Context(), "complete", mixed) },
+		"empty":   func() error { return e.canonicalHostStatus(t.Context(), "complete", contract.RunEvent{}) },
+	} {
+		before, err := store.Read(t.Context(), binding, record.ID)
+		assistantRunMust(t, err)
+		if err := call(); !errors.Is(err, errAssistantRunInvalid) {
+			t.Fatal(name, "notice accepted or refused for another reason", err)
+		}
+		after, err := store.Read(t.Context(), binding, record.ID)
+		assistantRunMust(t, err)
+		if after.Revision != before.Revision || !reflect.DeepEqual(after.Canonical, before.Canonical) {
+			t.Fatal(name, "refused notice changed the run")
+		}
+	}
+	encoded, err := assistantCanonicalHostEvent(record.Canonical.Head.RunID, message)
+	assistantRunMust(t, err)
+	value, err := runcontext.ParseJSON(encoded)
+	assistantRunMust(t, err)
+	envelope, err := runcontext.ReadStoredRunEvent(encoded)
+	assistantRunMust(t, err)
+	stamped, _ := json.Marshal(contract.StampEvent(message))
+	held, _ := json.Marshal(envelope.Event)
+	if runcontext.CanonicalJSON(value) != string(encoded) || envelope.Scope != (runcontext.DurableScope{Execution: record.Canonical.Head.RunID, Role: "author"}) || !bytes.Equal(stamped, held) {
+		t.Fatal("host notice is not stored as the root writer stores an event", string(encoded))
+	}
+}

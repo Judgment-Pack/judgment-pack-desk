@@ -20,7 +20,8 @@ const chatRow=(document:string)=>conversationWire('{"content":'+document+'}')['c
 const stateWire=(row:string)=>field(field(row,'checkpoint'),'state')
 const candidateDigests=(state:RunState):RunState=>({...state,candidates:state.candidates.map(c=>({...c,digest:sha256(c.text)}))})
 
-const admittedCanonicalFacts='{"large":9007199254740991,"decimal":1.2,"exponent":100,"negativeZero":0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.5}}'
+// Stored run events are canonical JSON (sorted members); see the Go producer.
+const admittedCanonicalFacts='{"decimal":1.2,"exponent":100,"flag":false,"large":9007199254740991,"negativeZero":0,"nested":{"amount":2.5},"nil":null,"numeric":"1"}'
 // Historical/raw post-admission custody only; never evidence of provider acceptance.
 const handwrittenFacts='{"large":9007199254740993,"decimal":1.20,"negativeZero":-0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.500}}'
 const acceptedFacts=(issues:string)=>{

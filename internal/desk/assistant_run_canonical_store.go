@@ -150,13 +150,33 @@ func (e *assistantRunExecution) bindCanonicalInput(ctx context.Context, input *r
 
 // A closed host workflow may finish/reopen its admitted model-free work after
 // an adapter returns. Publish a new CAS head; never edit the acknowledged head.
-func (e *assistantRunExecution) canonicalHostStatus(ctx context.Context, status string) error {
+//
+// This clears the canonical binding, so publishCanonicalHostEvent has no
+// writer afterwards. A completion notice therefore joins this same commit:
+// one CAS head carries the complete status and the notice, exactly once.
+func (e *assistantRunExecution) canonicalHostStatus(ctx context.Context, status string, notices ...contract.RunEvent) error {
 	if status != "running" && status != "complete" {
 		return errAssistantRunScope
+	}
+	// Only a plain host message, and only with the completing status.
+	for _, notice := range notices {
+		if status != "complete" || notice.Message == nil || !reflect.DeepEqual(notice, contract.RunEvent{Message: notice.Message}) {
+			return errAssistantRunInvalid
+		}
 	}
 	creation, err := compileAssistantCreationInput(e.source)
 	if err != nil || creation == nil || status == "running" && !contains([]string{"establish-cases", "propose-correction"}, creation.Action.Kind) {
 		return errAssistantRunScope
+	}
+	if len(notices) > 0 {
+		// publishCanonicalHostEvent's fence: a stopped or retired owner
+		// publishes nothing.
+		e.canonicalMu.Lock()
+		current := e.generation == 0 || e.generationMatches(ctx, e.generation) && !e.stopRequested && e.lifecycle == "running"
+		e.canonicalMu.Unlock()
+		if !current {
+			return errAssistantRunScope
+		}
 	}
 	err = e.writer.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
 		if !assistantCanonicalActive(*run) || status == "complete" && run.Creation == nil || run.State != "running" && run.State != "admitted" || run.Checkpoint == nil || run.Checkpoint.Approval != nil && run.Checkpoint.Approval.State != "answered" || run.Checkpoint.Handoff != nil && run.Checkpoint.Handoff.State != "continued" || run.Checkpoint.Durable != nil && run.Checkpoint.Durable.PendingHandoff != nil {
@@ -193,7 +213,15 @@ func (e *assistantRunExecution) canonicalHostStatus(ctx context.Context, status 
 		if err != nil {
 			return false, err
 		}
-		input, err := freezeAssistantCanonicalCommit(runcontext.RunCommit{RunID: run.Canonical.Head.RunID, ExpectedRevision: run.Canonical.Head.Revision, CommitID: rand.Text(), Checkpoint: raw, Events: [][]byte{}})
+		events := [][]byte{}
+		for _, notice := range notices {
+			encoded, err := assistantCanonicalHostEvent(run.Canonical.Head.RunID, notice)
+			if err != nil {
+				return false, err
+			}
+			events = append(events, encoded)
+		}
+		input, err := freezeAssistantCanonicalCommit(runcontext.RunCommit{RunID: run.Canonical.Head.RunID, ExpectedRevision: run.Canonical.Head.Revision, CommitID: rand.Text(), Checkpoint: raw, Events: events})
 		if err == nil {
 			_, err = commitAssistantCanonical(run, input, "")
 		}
@@ -206,7 +234,33 @@ func (e *assistantRunExecution) canonicalHostStatus(ctx context.Context, status 
 		e.canonicalMu.Unlock()
 	}
 	e.changed(err)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, notice := range notices {
+		if err := e.deliverCanonicalEvent(ctx, notice); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// assistantCanonicalHostEvent stores a host notice as the root writer stores
+// an event it is handed: stamped, under the root scope, in canonical JSON.
+func assistantCanonicalHostEvent(root string, event contract.RunEvent) ([]byte, error) {
+	raw, err := json.Marshal(runcontext.StoredRunEnvelope{Version: 1, Scope: runcontext.DurableScope{Execution: root, Role: "author"}, Event: contract.StampEvent(event)})
+	if err != nil {
+		return nil, err
+	}
+	value, err := runcontext.ParseJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	encoded := []byte(runcontext.CanonicalJSON(value))
+	if _, err := runcontext.ReadStoredRunEvent(encoded); err != nil {
+		return nil, err
+	}
+	return encoded, nil
 }
 
 // Initialization is part of explicit new admission, never a read or recovery.

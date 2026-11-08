@@ -160,11 +160,28 @@ func (e *assistantRunExecution) executeAssistantCreation(ctx context.Context, re
 			return true, err
 		}
 	}
+	// An execution owns at most one Runtime transport at a time (runtimeOwner),
+	// so Stop interrupts exactly the live one. The reviewer's execution opens
+	// its own; release this one before review and reopen it for the next call.
 	runtime, err := e.assistantRuntime(ctx)
 	if err != nil {
 		return true, err
 	}
-	defer runtime.Close()
+	defer func() {
+		if runtime != nil {
+			runtime.Close()
+		}
+	}()
+	if review != nil {
+		reviewWith := review
+		review = func(ctx context.Context, input *assistantCreationInput) (json.RawMessage, error) {
+			if runtime != nil {
+				runtime.Close()
+				runtime = nil
+			}
+			return reviewWith(ctx, input)
+		}
+	}
 	operations := map[string]string{}
 	call := func(ctx context.Context, name string, args any) (json.RawMessage, error) {
 		if !contains([]string{"validate", "experimental_validate_expectations", "experimental_test_cases"}, name) {
@@ -172,6 +189,13 @@ func (e *assistantRunExecution) executeAssistantCreation(ctx context.Context, re
 		}
 		if err := input.Fresh(ctx); err != nil {
 			return nil, err
+		}
+		if runtime == nil {
+			opened, err := e.assistantRuntime(ctx)
+			if err != nil {
+				return nil, err
+			}
+			runtime = opened
 		}
 		capture := &assistantTestRuntimeReceipt{}
 		raw, err := runtime.rpc(context.WithValue(ctx, assistantTestRuntimeReceiptKey{}, capture), "tools/call", map[string]any{"name": name, "arguments": args})
@@ -471,15 +495,15 @@ func (e *assistantRunExecution) completeAssistantCreation(ctx context.Context) e
 	}
 	cp := *run.Checkpoint
 	cp.Status = "complete"
+	notice := contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: "Creation review retained. Checks do not authorize Save."}}
 	if assistantCanonicalActive(e.record) {
-		err = e.canonicalHostStatus(ctx, "complete")
-	} else {
-		err = e.Checkpoint(ctx, cp)
+		// No adapter holds the canonical writer here; the notice is part of
+		// the host's completing commit (see canonicalHostStatus).
+		err = e.canonicalHostStatus(ctx, "complete", notice)
+	} else if err = e.Checkpoint(ctx, cp); err == nil {
+		err = e.publishCanonicalHostEvent(ctx, notice)
 	}
 	if err != nil {
-		return err
-	}
-	if err := e.publishCanonicalHostEvent(ctx, contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: "Creation review retained. Checks do not authorize Save."}}); err != nil {
 		return err
 	}
 	if err := e.writer.State(ctx, "complete"); err != nil {

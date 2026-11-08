@@ -10,12 +10,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // This is an actual provider-admission positive fixture. Unsafe historical raw
-// values remain a separate handwritten browser custody witness.
-const creationContinuationCanonicalFacts = `{"large":9007199254740991,"decimal":1.2,"exponent":100,"negativeZero":0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.5}}`
+// values remain a separate handwritten browser custody witness. The Agent
+// writer canonicalizes stored run events (sorted members), so the accepted
+// proposal facts are read back in that form.
+const creationContinuationCanonicalFacts = `{"decimal":1.2,"exponent":100,"flag":false,"large":9007199254740991,"negativeZero":0,"nested":{"amount":2.5},"nil":null,"numeric":"1"}`
 
 const creationContinuationFacts = `{"large":9007199254740991,"decimal":1.20,"exponent":1e2,"negativeZero":-0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.500}}`
 
@@ -64,7 +65,7 @@ func assistantCreationContinuationRun(t *testing.T, s *Server, token string, act
 	start := assistantCreationActualStart(t, s, token, action, n)
 	source := policyWorkspaceRead(t, s, token, "/api/conversations")
 	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
-	complete := assistantProtocolWait(t, s, token, first.ID, "complete")
+	complete := assistantProtocolWaitWithin(t, s, token, first.ID, "complete", assistantCreationActionWait)
 	if complete.ChatProjection == nil || !complete.ChatProjection.Acknowledged {
 		t.Fatal("terminal projection unacknowledged", complete.ProjectionIssue)
 	}
@@ -204,10 +205,7 @@ func TestAssistantCreationContinuationStopRetainsPartial(t *testing.T) {
 			t.Setenv("JPS_CREATION_OUTPUTS", "")
 			correction := assistantCreationCorrectionDocument
 			s, token, calls := assistantCreationContinuationFixture(t, correction)
-			// Profiling shows repeated strict validation of the retained ledger
-			// across real-Runtime setup actions. Bound each setup action consistently
-			// under variable CI and host load while keeping all completion checks.
-			const setupWait = 45 * time.Second
+			const setupWait = assistantCreationActionWait
 			recovered := assistantCreationActualRunWithin(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1, setupWait)
 			digest := recovered.Creation.CandidateDigest
 			assistantCreationRetainDraft(t, s, token)
