@@ -468,7 +468,14 @@ func TestAssistantExternalChildScopeProbe(t *testing.T) {
 			// Declare the same run policy and named models before the initial
 			// snapshot that the actual adapter will resolve on continuation.
 			concurrency := 2
-			policy := runcontext.PolicyLayer{"concurrency": map[string]any{"children": 2, "requests": 2}}
+			// Agent v0.13.2 runs a native agent's children one at a time and
+			// refuses a policy that asks otherwise (concurrency.children: agent
+			// children are sequential); the API engine runs two at once.
+			children := 2
+			if kind == "native" {
+				children = 1
+			}
+			policy := runcontext.PolicyLayer{"concurrency": map[string]any{"children": children, "requests": 2}}
 			named := runcontext.RunModels{Critic: "fixture", Child: "fixture", ConcurrentRequests: &concurrency}
 			session := runcontext.Session{Prompt: "Review the exact saved input", Policy: policy, Critic: "off", PolicyLegacyModels: &named, Context: &runcontext.Input{CurrentRequest: &runcontext.CurrentRequest{Message: "Review", Input: "exact original"}}}
 			if kind == "native" {
