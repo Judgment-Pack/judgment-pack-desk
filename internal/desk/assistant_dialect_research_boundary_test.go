@@ -2,6 +2,7 @@ package desk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
 )
 
 type assistantResearchTestOwner struct {
@@ -56,8 +58,16 @@ func (o *assistantResearchTestOwner) Update(ctx context.Context, change func(*in
 	}
 	return result, err
 }
+
+// assistantResearchDirect is one root research call; on a canonical run it
+// takes the Agent's sourced-call path (assistantCanonicalHostCall).
 func assistantResearchDirect(t *testing.T, e *assistantRunExecution, x *assistantExecution, ctx context.Context, call, raw string) runcontext.ToolResult {
 	t.Helper()
+	if assistantCanonicalActive(e.record) {
+		result, err := assistantCanonicalHostCall(e, x, ctx, call, assistantResearchTool, raw, true)
+		assistantRunMust(t, err)
+		return result
+	}
 	assistantPolicyEvent(t, e, call, assistantResearchTool, []byte(raw))
 	ctx = context.WithValue(runcontext.WithCallID(ctx, call), assistantHostRootKey{}, true)
 	result, err := assistantGraphFind(t, x.Run.HostTools, assistantResearchTool).Execute(ctx, []byte(raw))
@@ -70,7 +80,7 @@ func TestAssistantDialectResearchUnknownRecovery(t *testing.T) {
 	t.Cleanup(func() { testHookResearchRequest = nil })
 	for _, mode := range []string{"before-write", "lost-ack", "cancel-after-queue"} {
 		t.Run(mode, func(t *testing.T) {
-			s, token, e := assistantRecipeBrowserFixture(t, "http://127.0.0.1:1")
+			s, token, e := assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 			saved, rr, run := assistantResearchSeed(t, s, token, e, true)
 			x := assistantExecutionOpen(t, s, e)
 			assistantRecordRead(t, e, x, saved)
@@ -85,8 +95,14 @@ func TestAssistantDialectResearchUnknownRecovery(t *testing.T) {
 				}
 			}
 			s.researchJournals = owner
-			result := assistantResearchDirect(t, e, x, t.Context(), "unknown-request", assistantResearchArgs(saved))
-			if !result.Err() {
+			// A run that ends while the call waits answers the call with the
+			// Agent's Cancelled, and no result reaches the model.
+			result, callErr := assistantCanonicalHostCall(e, x, t.Context(), "unknown-request", assistantResearchTool, assistantResearchArgs(saved), true)
+			cancelled := failure.IsCancelled(callErr)
+			if callErr != nil && !cancelled {
+				t.Fatal(callErr)
+			}
+			if !cancelled && !result.Err() {
 				t.Fatal("unknown acknowledgement reported success")
 			}
 			if mode == "before-write" {
@@ -97,7 +113,7 @@ func TestAssistantDialectResearchUnknownRecovery(t *testing.T) {
 				}
 				return
 			}
-			if !strings.Contains(result.Value().Text(), "outcome is unknown") {
+			if !cancelled && !strings.Contains(result.Value().Text(), "outcome is unknown") {
 				t.Fatal("unknown typed failure missing", result.Value().Text())
 			}
 			select {
@@ -172,9 +188,10 @@ func TestAssistantDialectResearchQueuedAuthority(t *testing.T) {
 			var token string
 			var e *assistantRunExecution
 			if mode == "critic" {
+				assistantTestHostCanonicalNext(t)
 				s, token, e, _ = assistantTestHostFixture(t, "http://127.0.0.1:1", "work", false, false, true)
 			} else {
-				s, token, e = assistantRecipeBrowserFixture(t, "http://127.0.0.1:1")
+				s, token, e = assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 			}
 			saved, rr, run := assistantResearchSeed(t, s, token, e, true)
 			var x *assistantExecution
@@ -202,13 +219,16 @@ func TestAssistantDialectResearchQueuedAuthority(t *testing.T) {
 			s.researchJournals = owner
 			raw := assistantResearchArgs(saved)
 			call := "queued-request"
-			assistantPolicyEvent(t, e, call, assistantResearchTool, []byte(raw))
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			ctx = context.WithValue(runcontext.WithCallID(ctx, call), assistantHostRootKey{}, true)
+			// An error from the Agent's durable call path (a canceled call) is a
+			// refusal, as a failed result is.
 			done := make(chan runcontext.ToolResult, 1)
 			go func() {
-				result, _ := assistantGraphFind(t, x.Run.HostTools, assistantResearchTool).Execute(ctx, []byte(raw))
+				result, err := assistantCanonicalHostCall(e, x, ctx, call, assistantResearchTool, raw, true)
+				if err != nil {
+					result = assistantDialectFailure(err)
+				}
 				done <- result
 			}()
 			select {
@@ -299,11 +319,11 @@ func TestAssistantDialectResearchPlanChildAndIntent(t *testing.T) {
 	}
 }
 func TestAssistantDialectResearchReceiptImport(t *testing.T) {
-	s, token, e := assistantRecipeBrowserFixture(t, "http://127.0.0.1:1")
+	s, token, e := assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 	saved, rr, run := assistantResearchSeed(t, s, token, e, true)
 	x := assistantExecutionOpen(t, s, e)
 	assistantRecordRead(t, e, x, saved)
-	result := assistantRecipeInvoke(t, e, x, "request", assistantResearchTool, assistantResearchArgs(saved))
+	result := assistantResearchInvoke(t, e, x, t.Context(), "request", assistantResearchTool, assistantResearchArgs(saved))
 	if result.Err() {
 		t.Fatal(result.Value().Text())
 	}
@@ -370,12 +390,36 @@ func TestAssistantDialectResearchReceiptImport(t *testing.T) {
 							}
 							events := mutated.Events[:0]
 							for _, event := range mutated.Events {
-								if event.Event.ToolResult != nil && event.Event.ToolResult.Name == assistantResearchTool {
+								if event.Event.ToolResult != nil && (event.Event.ToolResult.Name == assistantResearchTool || event.Event.ToolResult.Name == runcontext.WireName("desk-research-workflow", assistantResearchTool)) {
 									continue
 								}
 								events = append(events, event)
 							}
 							mutated.Events = events
+							// On a canonical run the Agent has likewise not yet recorded
+							// the host call's result: its dispatch is still claimed, with
+							// no observation of it.
+							if assistantCanonicalActive(mutated) {
+								book := mutated.Checkpoint.Durable
+								claimed := map[string]bool{}
+								for j := range book.Dispatches {
+									d := &book.Dispatches[j]
+									if d.Kind == "host" && d.Tool == runcontext.WireName("desk-research-workflow", assistantResearchTool) {
+										d.State, d.Result, d.Failure = "claimed", nil, nil
+										claimed[d.ID] = true
+									}
+								}
+								observations := book.Observations[:0]
+								for _, o := range book.Observations {
+									if !claimed[o.DispatchID] {
+										observations = append(observations, o)
+									}
+								}
+								book.Observations = observations
+								head, err := json.Marshal(mutated.Checkpoint)
+								assistantRunMust(t, err)
+								mutated.Canonical.Head.Checkpoint = head
+							}
 							op.Result = assistantChatJSON(decision)
 							assistantRunMust(t, assistantRecipeImport(t, e, mutated))
 						}
@@ -462,7 +506,7 @@ func TestAssistantDialectResearchExpiryAfterValidation(t *testing.T) {
 func TestAssistantDialectResearchPreparationCommitGuard(t *testing.T) {
 	for _, injected := range []bool{false, true} {
 		t.Run(map[bool]string{false: "file", true: "injected"}[injected], func(t *testing.T) {
-			s, token, e := assistantRecipeBrowserFixture(t, "http://127.0.0.1:1")
+			s, token, e := assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 			saved, rr, run := assistantResearchSeed(t, s, token, e, true)
 			if injected {
 				useMemoryPreparationFixture(t, s)
@@ -483,11 +527,14 @@ func TestAssistantDialectResearchPreparationCommitGuard(t *testing.T) {
 			s.researchJournals = owner
 			call := "commit-request"
 			raw := assistantResearchArgs(saved)
-			assistantPolicyEvent(t, e, call, assistantResearchTool, []byte(raw))
-			ctx := context.WithValue(runcontext.WithCallID(t.Context(), call), assistantHostRootKey{}, true)
-			tool := assistantGraphFind(t, x.Run.HostTools, assistantResearchTool)
 			done := make(chan runcontext.ToolResult, 1)
-			go func() { r, _ := tool.Execute(ctx, []byte(raw)); done <- r }()
+			go func() {
+				r, err := assistantCanonicalHostCall(e, x, t.Context(), call, assistantResearchTool, raw, true)
+				if err != nil {
+					r = assistantDialectFailure(err)
+				}
+				done <- r
+			}()
 			select {
 			case <-entered:
 			case <-time.After(5 * time.Second):
@@ -519,14 +566,20 @@ func TestAssistantDialectResearchPreparationCommitGuard(t *testing.T) {
 }
 
 func TestAssistantDialectResearchKnownAdmissionCancellation(t *testing.T) {
-	s, token, e := assistantRecipeBrowserFixture(t, "http://127.0.0.1:1")
+	s, token, e := assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 	saved, rr, run := assistantResearchSeed(t, s, token, e, true)
 	x := assistantExecutionOpen(t, s, e)
 	assistantRecordRead(t, e, x, saved)
 	owner := &assistantResearchTestOwner{journal: s.researchJournal(rr, run.ID), after: e.cancel, acknowledge: true}
 	s.researchJournals = owner
-	result := assistantResearchDirect(t, e, x, t.Context(), "known-cancel", assistantResearchArgs(saved))
-	if result.Err() {
+	// The chat is canceled once the admission is acknowledged: the Agent
+	// answers the waiting call with Cancelled, and the known admission must
+	// survive in the record below.
+	result, callErr := assistantCanonicalHostCall(e, x, t.Context(), "known-cancel", assistantResearchTool, assistantResearchArgs(saved), true)
+	if callErr != nil && !failure.IsCancelled(callErr) {
+		t.Fatal(callErr)
+	}
+	if callErr == nil && result.Err() {
 		t.Fatal("known admission lost after cancellation", result.Value().Text())
 	}
 	select {
@@ -548,18 +601,19 @@ func TestAssistantDialectResearchKnownAdmissionCancellation(t *testing.T) {
 func TestAssistantDialectResearchProjectionOwnerProof(t *testing.T) {
 	for _, mode := range []string{"missing", "different", "review-stale"} {
 		t.Run(mode, func(t *testing.T) {
-			s, token, e := assistantRecipeBrowserFixture(t, "http://127.0.0.1:1")
+			s, token, e := assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 			saved, rr, run := assistantResearchSeed(t, s, token, e, mode != "review-stale")
 			x := assistantExecutionOpen(t, s, e)
 			assistantRecordRead(t, e, x, saved)
-			result := assistantRecipeInvoke(t, e, x, "request", assistantResearchTool, assistantResearchArgs(saved))
+			result := assistantResearchInvoke(t, e, x, t.Context(), "request", assistantResearchTool, assistantResearchArgs(saved))
 			if result.Err() {
 				t.Fatal(result.Value().Text())
 			}
 			record := assistantMappingObserve(t, s, e, 1)
 			cp := *record.Checkpoint
 			cp.Status = "complete"
-			assistantRunMust(t, e.Checkpoint(t.Context(), cp))
+			// A canonical run's checkpoint is saved through its own writer.
+			assistantRunMust(t, x.Run.Context.Checkpoint(t.Context(), cp))
 			assistantRunMust(t, e.writer.State(t.Context(), "complete"))
 			if mode == "review-stale" {
 				doc := saved.Document
@@ -701,7 +755,7 @@ func (p assistantResearchObservedPreparation) TryRead(ctx context.Context) (inpu
 func TestAssistantDialectResearchReadViewBusy(t *testing.T) {
 	for _, injected := range []bool{false, true} {
 		t.Run(map[bool]string{false: "file-writer", true: "injected-projection-read"}[injected], func(t *testing.T) {
-			s, token, e := assistantRecipeBrowserFixture(t, "http://127.0.0.1:1")
+			s, token, e := assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 			saved, rr, run := assistantResearchSeed(t, s, token, e, true)
 			if injected {
 				useMemoryPreparationFixture(t, s)
@@ -721,14 +775,17 @@ func TestAssistantDialectResearchReadViewBusy(t *testing.T) {
 			entered := make(chan struct{}, 1)
 			s.inputPreparations = assistantResearchObservedPreparation{repo, entered}
 			call := "busy-request"
-			raw := []byte(assistantResearchArgs(saved))
-			assistantPolicyEvent(t, e, call, assistantResearchTool, raw)
+			raw := assistantResearchArgs(saved)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			ctx = context.WithValue(runcontext.WithCallID(ctx, call), assistantHostRootKey{}, true)
 			done := make(chan runcontext.ToolResult, 1)
-			tool := assistantGraphFind(t, x.Run.HostTools, assistantResearchTool)
-			go func() { result, _ := tool.Execute(ctx, raw); done <- result }()
+			go func() {
+				result, err := assistantCanonicalHostCall(e, x, ctx, call, assistantResearchTool, raw, true)
+				if err != nil {
+					result = assistantDialectFailure(err)
+				}
+				done <- result
+			}()
 			select {
 			case <-entered:
 			case result := <-done:

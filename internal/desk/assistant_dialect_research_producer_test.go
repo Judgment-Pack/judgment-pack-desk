@@ -21,7 +21,9 @@ func TestAssistantDialectResearchActualAPIProducer(t *testing.T) {
 		t.Run(map[bool]string{false: "review", true: "started"}[grant], func(t *testing.T) {
 			var saved inputPreparationReply
 			var steps atomic.Int32
-			names := []string{"read_dialect_recipe", assistantResearchTool, "read_dialect_activity"}
+			// An approved research workflow is offered as its sourced tool, by
+			// its wire name.
+			names := []string{"read_dialect_recipe", runcontext.WireName("desk-research-workflow", assistantResearchTool), "read_dialect_activity"}
 			u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 				n := int(steps.Add(1))
 				finish := "tool_calls"
@@ -40,7 +42,7 @@ func TestAssistantDialectResearchActualAPIProducer(t *testing.T) {
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = io.WriteString(w, "data: "+string(raw)+"\n\ndata: {\"id\":\"research-fixture\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\""+finish+"\"}]}\n\ndata: [DONE]\n\n")
 			})
-			s, token, e := assistantRecipeBrowserFixture(t, u.server.URL)
+			s, token, e := assistantResearchSourceBrowserFixture(t, u.server.URL)
 			var rrRun inputResearchRun
 			seeded, rr, run := assistantResearchSeed(t, s, token, e, grant)
 			saved = seeded

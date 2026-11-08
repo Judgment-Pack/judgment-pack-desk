@@ -16,7 +16,7 @@ import (
 
 func assistantRecordRead(t *testing.T, e *assistantRunExecution, x *assistantExecution, saved inputPreparationReply) {
 	t.Helper()
-	r := assistantRecipeInvoke(t, e, x, "recipe-read", "read_dialect_recipe", string(assistantChatJSON(map[string]string{"id": saved.Document.ID})))
+	r := assistantResearchInvoke(t, e, x, t.Context(), "recipe-read", "read_dialect_recipe", string(assistantChatJSON(map[string]string{"id": saved.Document.ID})))
 	if r.Err() {
 		t.Fatal(r.Value().Text())
 	}

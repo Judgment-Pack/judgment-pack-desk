@@ -59,6 +59,18 @@ func assistantTestHostFixture(t *testing.T, url, phase string, draft, native boo
 func assistantTestHostFixtureCapture(t *testing.T, url, phase string, draft, native bool, capture *assistantPackBasis, review ...bool) (*Server, string, *assistantRunExecution, string) {
 	return assistantTestHostFixtureExecuteCapture(t, url, phase, draft, native, capture, nil, review...)
 }
+
+// assistantTestHostCanonical makes the next API test host fixture admit its
+// run with a canonical executor, as every production executor is. Tests in
+// this package do not run in parallel.
+var assistantTestHostCanonical bool
+
+func assistantTestHostCanonicalNext(t *testing.T) {
+	t.Helper()
+	assistantTestHostCanonical = true
+	t.Cleanup(func() { assistantTestHostCanonical = false })
+}
+
 func assistantTestHostFixtureExecuteCapture(t *testing.T, url, phase string, draft, native bool, capture *assistantPackBasis, execute func(context.Context, *assistantRunExecution) error, review ...bool) (*Server, string, *assistantRunExecution, string) {
 	t.Helper()
 	entered := make(chan *assistantRunExecution, 1)
@@ -78,6 +90,9 @@ func assistantTestHostFixtureExecuteCapture(t *testing.T, url, phase string, dra
 		connection.Assistant.Endpoint = nil
 		connection.Assistant.Agent = &AssistantAgentConfig{Model: &model, Provider: "openai", AuthMethod: "subscription", Models: []string{"shared-model", "child-model"}, Tools: []string{"get_schema"}, Effort: "medium", ChildModel: "child-model", CriticModel: "child-model"}
 		s.assistantRunExecutor = &assistantCodexExecutor{executor}
+	} else if assistantTestHostCanonical {
+		assistantTestHostCanonical = false
+		s.assistantRunExecutor = &assistantCanonicalProtocolExecutor{executor}
 	}
 	raw, err := encodeAIRegistry(aiRegistry{Version: 1, DefaultConnection: testAIAlpha, Connections: []aiConnection{connection}})
 	assistantRunMust(t, err)
