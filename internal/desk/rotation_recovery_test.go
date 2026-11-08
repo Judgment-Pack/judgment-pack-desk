@@ -343,22 +343,22 @@ func TestAListOfKeysHoldsItsTrailsToTheirRule(t *testing.T) {
 	}
 }
 
-// **A desk Desk made, opened directly, finishes its own rotation** (the line
-// audit's finding 4). A rotation stopped after the runtime wrote its line;
-// Desk is then started on the desk's folder itself, which its registry
-// leaves out: the start finishes the rotation by the desk's own id.
+// **A desk Desk made, opened directly, is refused and its rotation left**
+// (the line audit's finding 4; v0.14.0 keeps the first-project seal). A
+// rotation stopped after the runtime wrote its line; Desk is then started on
+// the desk's folder itself, which is another project to an installation
+// without a Desk home, sealed to the project Desk was first started on: the
+// start is refused in words, and the stopped rotation is left as it was.
 func TestADeskOpenedDirectlyFinishesItsRotation(t *testing.T) {
 	const id = "c9500000000000000000000000000001"
 	r := newRotationRig(t, id, "")
 	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 	r.abandonRotation(t, "rotation: line written")
+	left := r.describe(t)
 	r.ts.Close()
-	again, _, logged := startedAt(t, r.s, r.desk)
-	if again.cfg.deskID != id {
-		t.Fatalf("Desk was opened on %q", again.cfg.deskID)
-	}
-	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
-		t.Errorf("after the start on the desk itself the folder holds %s (%s)", got, logged)
+	refusedBySeal(t, r.s, r.desk)
+	if got := r.describe(t); got != left {
+		t.Errorf("after the refused start on the desk itself the folder holds %s, want %s", got, left)
 	}
 }
 
@@ -570,10 +570,11 @@ func TestARotationBegunBeforeAnySignatureNamesItsTrail(t *testing.T) {
 // nothing** (review round 1 of #302, finding 2). The desk is copied before a
 // rotation, with its manifest's id and its trail's identity; the original's
 // rotation stops after the runtime wrote its line; the copy, whose sidecar
-// has no rotation, is opened directly in the same configuration. Its start
-// leaves the next seed, the list and the marker as they are, and the log and
-// the panel say why. The desk moved out of Desk's desks folder, opened
-// directly, is the desk's own, and its start finishes the rotation.
+// has no rotation, is opened directly in the same configuration. Without a
+// Desk home the installation is sealed to the project Desk was first started
+// on (v0.14.0), so that start, and a start on the desk moved out of Desk's
+// desks folder and opened directly, are refused in words, and leave the next
+// seed, the list and the marker as they are.
 func TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing(t *testing.T) {
 	const id = "c9a00000000000000000000000000001"
 	t.Run("a copy", func(t *testing.T) {
@@ -587,21 +588,12 @@ func TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing(t *testing.T) {
 			t.Fatalf("the stop left %s", left)
 		}
 		r.ts.Close()
-		again, ts, logged := startedAt(t, r.s, copied)
-		if again.cfg.deskID != id {
-			t.Fatalf("Desk was opened on %q", again.cfg.deskID)
-		}
+		refusedBySeal(t, r.s, copied)
 		if got := r.describe(t); got != left {
-			t.Errorf("after the copy's start the folder holds %s, want %s (%s)", got, left, logged)
+			t.Errorf("after the copy's refused start the folder holds %s, want %s", got, left)
 		}
 		if readFile(t, filepath.Join(r.signing, id+keysSuffix)) != list || r.marker(t) != marker {
-			t.Errorf("the copy's start changed the list or the marker (%s)", logged)
-		}
-		if !strings.Contains(logged.String(), "left as it is, because "+deskSharedWords) {
-			t.Errorf("the start did not say why: %s", logged)
-		}
-		if answer, _ := panelOn(t, ts, ""); answer.Rotation.State != rotationUnavailable || answer.Rotation.Reason != "Desk rotates no key here: "+deskSharedWords+"." {
-			t.Errorf("the copy's panel says %+v", answer.Rotation)
+			t.Errorf("the copy's refused start changed the list or the marker")
 		}
 	})
 
@@ -615,12 +607,10 @@ func TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing(t *testing.T) {
 			t.Fatal(err)
 		}
 		r.desk = moved
-		again, _, logged := startedAt(t, r.s, moved)
-		if again.cfg.deskID != id {
-			t.Fatalf("Desk was opened on %q", again.cfg.deskID)
-		}
-		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
-			t.Errorf("after the moved desk's start the folder holds %s (%s)", got, logged)
+		left := r.describe(t)
+		refusedBySeal(t, r.s, moved)
+		if got := r.describe(t); got != left {
+			t.Errorf("after the moved desk's refused start the folder holds %s, want %s", got, left)
 		}
 	})
 }

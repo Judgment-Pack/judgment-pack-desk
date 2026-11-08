@@ -64,10 +64,13 @@ func offerSays(t *testing.T, ts *httptest.Server) string {
 // **A copy of a project removes no key of the original** (review round 1 of
 // #296, finding 1). A signing upgrade publishes jpack.json and its lock and
 // stops before its marker goes. The project is copied, its identity file
-// with it, and the copy's jpack.json put back unsigned. A start on the copy
-// finds its identity held by the original folder still: it removes nothing,
-// says why, and offers no key; a start on the original then removes only
-// the marker, since its jpack.json names the key.
+// with it, and the copy's jpack.json put back unsigned. The copy is another
+// project to the installation, which is sealed to the project Desk was first
+// started on: a start on the copy there is refused in words and removes
+// nothing. Started in an installation of its own, the copy finds its identity
+// held by the original folder still: it says why, and offers no key. A start
+// on the original then removes only the marker, since its jpack.json names
+// the key.
 func TestACopyOfAProjectRemovesNoKeyOfTheOriginal(t *testing.T) {
 	u := newSigningUpgrade(t, nil)
 	name := stoppedAfterNaming(t, u)
@@ -76,9 +79,14 @@ func TestACopyOfAProjectRemovesNoKeyOfTheOriginal(t *testing.T) {
 	copyProject(t, u.project, copied)
 	writeProject(t, copied, map[string]string{"jpack.json": upgradeBefore})
 
-	there, ts, logged := startedAt(t, u.s, copied)
+	refusedBySeal(t, u.s, copied)
 	if got := u.keyFiles(t); !slices.Equal(got, []string{name + ".creating", name + ".keys.jsonl", name + ".seed"}) {
-		t.Fatalf("a start on the copy left %q: %s", got, logged)
+		t.Fatalf("a refused start on the copy left %q", got)
+	}
+
+	there, ts, logged := startedApart(t, u.s, copied)
+	if got := u.keyFiles(t); !slices.Equal(got, []string{name + ".creating", name + ".keys.jsonl", name + ".seed"}) {
+		t.Fatalf("a start on the copy in its own installation left %q: %s", got, logged)
 	}
 	if !there.startupShared() || !strings.Contains(logged.String(), "is also held by") {
 		t.Errorf("the copy does not know its identity is shared: %s", logged)
@@ -87,8 +95,9 @@ func TestACopyOfAProjectRemovesNoKeyOfTheOriginal(t *testing.T) {
 	if !strings.Contains(said, "is also held by another folder") {
 		t.Errorf("the copy's offer says %s", said)
 	}
+	storageTestMust(t, there.Close())
 
-	again, _, logged := startedAt(t, there, u.project)
+	again, _, logged := startedAt(t, u.s, u.project)
 	if again.startupShared() {
 		t.Errorf("the original takes its identity for a copy's")
 	}
@@ -99,9 +108,11 @@ func TestACopyOfAProjectRemovesNoKeyOfTheOriginal(t *testing.T) {
 
 // **A rotation under an identity two folders hold is neither recovered nor
 // offered.** The startup project's rotation stops after the runtime wrote
-// its line; the project is copied. A start on the copy leaves the next key
-// and the marker, and its decision record offers no rotation, and says why;
-// a start on the original finishes the rotation.
+// its line; the project is copied. The copy is another project to the
+// installation, sealed to its first project: a start on the copy there is
+// refused in words and leaves the next key and the marker. Started in an
+// installation of its own, the copy's decision record offers no rotation, and
+// says why; a start on the original finishes the rotation.
 func TestARotationUnderASharedIdentityIsLeft(t *testing.T) {
 	u, token := signedThenRotatable(t)
 	testHookKeyBetween = func(at string) {
@@ -121,15 +132,21 @@ func TestARotationUnderASharedIdentityIsLeft(t *testing.T) {
 	copied := u.project + " copy"
 	copyProject(t, u.project, copied)
 
-	there, ts, logged := startedAt(t, u.s, copied)
+	refusedBySeal(t, u.s, copied)
 	if got := u.keyFiles(t); !slices.Equal(got, left) || seedIs(u.seed) != "1" {
-		t.Errorf("a start on the copy left %q, seed %s: %s", got, seedIs(u.seed), logged)
+		t.Errorf("a refused start on the copy left %q, seed %s", got, seedIs(u.seed))
+	}
+
+	there, ts, logged := startedApart(t, u.s, copied)
+	if got := u.keyFiles(t); !slices.Equal(got, left) || seedIs(u.seed) != "1" {
+		t.Errorf("a start on the copy in its own installation left %q, seed %s: %s", got, seedIs(u.seed), logged)
 	}
 	if _, panel, _ := readAudit(t, ts, ""); panel.Rotation == nil || panel.Rotation.State != rotationUnavailable || !strings.Contains(panel.Rotation.Reason, "is also held by another folder") {
 		t.Errorf("the copy's decision record offers %+v", panel.Rotation)
 	}
+	storageTestMust(t, there.Close())
 
-	startedAt(t, there, u.project)
+	startedAt(t, u.s, u.project)
 	if got := u.keyFiles(t); !slices.Equal(got, []string{n + ".keys.jsonl", n + ".seed"}) || seedIs(u.seed) != "2" {
 		t.Errorf("a start on the original left %q, seed %s", got, seedIs(u.seed))
 	}
@@ -158,10 +175,12 @@ func stoppedBeforeNaming(t *testing.T, u *signingUpgrade) string {
 // **An unfinished creation's key goes only where its marker binds it to this
 // project and this transaction** (review round 1 of #296, finding 1): the
 // identity, the folder and the jpack.json the upgrade set out to replace,
-// all three as found. Moved since, with jpack.json changed since, or with a
-// marker that names none of them, the key, its list and its marker stay, the
-// start says why, and the offer says so; jpack.json put back as it was, the
-// next start removes them.
+// all three as found. With jpack.json changed since, or with a marker that
+// names none of them, the key, its list and its marker stay, the start says
+// why, and the offer says so; jpack.json put back as it was, the next start
+// removes them. Moved since, outside Desk, the folder is another project to
+// the installation, sealed to its first project: its start is refused in
+// words, and the key, its list and its marker stay.
 func TestACreationIsRemovedOnlyWhereItsMarkerBindsIt(t *testing.T) {
 	t.Run("moved since", func(t *testing.T) {
 		u := newSigningUpgrade(t, nil)
@@ -171,13 +190,9 @@ func TestACreationIsRemovedOnlyWhereItsMarkerBindsIt(t *testing.T) {
 		if err := os.Rename(u.project, moved); err != nil {
 			t.Fatal(err)
 		}
-		there, ts, logged := startedAt(t, u.s, moved)
-		if there.startupShared() || len(u.keyFiles(t)) != 3 || !strings.Contains(logged.String(), "its marker names another folder") {
-			t.Errorf("a start on the moved project left %q: %s", u.keyFiles(t), logged)
-		}
-		said := offerSays(t, ts)
-		if !strings.Contains(said, "a signing key's creation for this project did not finish") {
-			t.Errorf("the offer says %s", said)
+		refusedBySeal(t, u.s, moved)
+		if got := u.keyFiles(t); len(got) != 3 {
+			t.Errorf("a refused start on the moved project left %q", got)
 		}
 	})
 

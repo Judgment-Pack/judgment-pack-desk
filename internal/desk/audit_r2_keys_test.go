@@ -589,10 +589,11 @@ func startedOn(t *testing.T, s *Server, project string) (*Server, *bytes.Buffer)
 // every start's sweep** (issue #310, the second line audit's finding N2, the
 // auditor's scenario). A creation is stopped after its manifest is published
 // and before its marker goes; its marker records its folder and its
-// manifest's digest. The desk is moved out of the desks folder. A start on
-// another project against the same configuration removes nothing, and says
-// why; a start on the desk itself, opened directly, finds it published and
-// removes the marker alone.
+// manifest's digest. The desk is moved out of the desks folder. A start of
+// the installation's own project removes nothing, and says why. Without a
+// Desk home the installation is sealed to the project Desk was first started
+// on (v0.14.0), so a start on another project, or on the desk itself opened
+// directly, is refused in words and removes nothing.
 func TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey(t *testing.T) {
 	const id = "e3100000000000000000000000000001"
 	calls, s, ts, _ := signingStandIn(t)
@@ -608,20 +609,21 @@ func TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey(t *testing.T) {
 	}
 	all := []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}
 
-	other, logged := startedOn(t, s, t.TempDir())
+	own, logged := startedOn(t, s, s.projectDir)
 	if names := namesIn(t, folder); !slices.Equal(names, all) {
-		t.Errorf("a start on another project left %q: %s", names, logged)
+		t.Errorf("a start of the installation's project left %q: %s", names, logged)
 	}
 	if !strings.Contains(logged.String(), deskMovedWords) {
-		t.Errorf("a start on another project did not say why it kept the key: %s", logged)
+		t.Errorf("a start of the installation's project did not say why it kept the key: %s", logged)
 	}
 
-	direct, logged := startedOn(t, other, moved)
-	if direct.cfg.deskID != id {
-		t.Fatalf("Desk opened the moved desk as %q", direct.cfg.deskID)
+	refusedBySeal(t, own, t.TempDir())
+	if names := namesIn(t, folder); !slices.Equal(names, all) {
+		t.Errorf("a refused start on another project left %q", names)
 	}
-	if names := namesIn(t, folder); !slices.Equal(names, all[1:]) {
-		t.Errorf("a start on the desk itself left %q: %s", names, logged)
+	refusedBySeal(t, own, moved)
+	if names := namesIn(t, folder); !slices.Equal(names, all) {
+		t.Errorf("a refused start on the desk itself left %q", names)
 	}
 }
 
