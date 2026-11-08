@@ -479,52 +479,34 @@ func TestAssistantRunStoragePendingRestoreAndCustody(t *testing.T) {
 	}
 }
 
+// **Another startup project's assistant runs are not relinked in: the
+// installation is sealed to its first project** (v0.14.0). Relinking a run
+// ledger recorded under another project folder of the same installation,
+// without a Desk home, needs a Desk started on that second folder. With the
+// first Desk closed (one Desk runs per installation), the first-project seal
+// refuses that start in words, before any ledger is read, previewed, linked
+// or merged; the first project's run is still read from its own ledger. This
+// was the sibling relink and destination-ledger conflict test, which started
+// both projects' Desks on one installation.
 func TestAssistantRunStorageSiblingRelinkAndConflict(t *testing.T) {
-	for _, conflict := range []bool{false, true} {
-		t.Run(map[bool]string{false: "sibling only", true: "destination ledger"}[conflict], func(t *testing.T) {
-			old, _, store, binding, record, lease, _ := assistantRunHTTPFixture(t)
-			assistantRunMust(t, lease.Close())
-			moved, mts, _ := assistantServerIn(t, old.configDir)
-			stale := moved.assistantRuns()
-			if conflict {
-				raw := assistantRunRaw(t, store)
-				ledger, err := decodeAssistantRunStorage(store.name, raw)
-				assistantRunMust(t, err)
-				ledger.Project = stale.project
-				ledger.Runs[0].Binding.Project = stale.project
-				raw, _ = json.Marshal(ledger)
-				root, err := moved.openChatData()
-				assistantRunMust(t, err)
-				assistantRunMust(t, writePrivateData(root.root, stale.name, raw))
-				root.root.Close()
-			}
-			request := projectHistoryRequest{PreviousProject: old.projectDir}
-			code, preview, body := historyRequest(t, mts, "preview", request)
-			if conflict {
-				if code != 409 {
-					t.Fatalf("ledger merged during relink %d %s", code, body)
-				}
-				return
-			}
-			if code != 200 || preview.ChatCount != 0 || preview.SourceRevision != "absent" {
-				t.Fatalf("sibling preview %d %s", code, body)
-			}
-			request.SourceRevision = preview.SourceRevision
-			request.BindingsRevision = preview.BindingsRevision
-			if code, _, body = historyRequest(t, mts, "relink", request); code != 200 {
-				t.Fatalf("sibling relink %d %s", code, body)
-			}
-			linked := moved.assistantRuns()
-			if linked.name != store.name {
-				t.Fatal("relink orphaned original namespace")
-			}
-			if _, err := linked.Read(context.Background(), binding, record.ID); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := stale.Read(context.Background(), binding, record.ID); !errors.Is(err, errAssistantRunScope) {
-				t.Fatalf("pre-relink store trusted stale namespace %v", err)
-			}
-		})
+	old, ots, store, binding, record, lease, _ := assistantRunHTTPFixture(t)
+	assistantRunMust(t, lease.Close())
+	ledger := filepath.Join(storageGet(t, ots).Path, store.name)
+	ots.Close()
+	assistantRunMust(t, old.Close())
+	before, err := os.ReadFile(ledger)
+	assistantRunMust(t, err)
+	refusedBySeal(t, old, t.TempDir())
+	if after, err := os.ReadFile(ledger); err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("the refused start changed the first project's run ledger: %v", err)
+	}
+	again, _ := restartedServer(t, old)
+	runs := again.assistantRuns()
+	if runs.name != store.name {
+		t.Fatal("the refused start moved the first project's run ledger")
+	}
+	if _, err := runs.Read(context.Background(), binding, record.ID); err != nil {
+		t.Fatal(err)
 	}
 }
 

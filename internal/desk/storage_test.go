@@ -145,18 +145,22 @@ func TestStorageDefaultAndLegacy(t *testing.T) {
 	}
 }
 
+// A move takes every project's history in the data folder. One Desk runs per
+// installation, sealed to its first project, so the other project's history
+// is one an earlier Desk left there; the writer after the move is the moved
+// Desk's own, and a restart of it.
 func TestStorageMoveAllProjectsAndFreshWriters(t *testing.T) {
 	config := t.TempDir()
 	a, ats, _ := assistantServerIn(t, config)
-	b, bts, _ := assistantServerIn(t, config)
-	for _, ts := range []*httptest.Server{ats, bts} {
-		if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
-			t.Fatal(code)
-		}
+	if code, _ := chatRequest(t, ats, "PUT", "absent", storageChat, true, ""); code != 200 {
+		t.Fatal(code)
 	}
 	storageChat := savedConversationBytes(t, a, ats)
-	privateFixture(t, filepath.Join(config, "secrets", "unrelated"), "protected credential")
 	before := storageGet(t, ats)
+	sibling := "conversations-" + digestOf([]byte("an earlier project of this installation")) + ".json"
+	privateFixture(t, filepath.Join(before.Path, sibling), storageChat)
+	privateFixture(t, filepath.Join(config, "secrets", "unrelated"), "protected credential")
+	before = storageGet(t, ats)
 	if before.ProjectCount != 2 || before.ProjectBytes != int64(len(storageChat)) {
 		t.Fatalf("%+v", before)
 	}
@@ -168,29 +172,33 @@ func TestStorageMoveAllProjectsAndFreshWriters(t *testing.T) {
 	if after.Path != target || after.PreviousPath != before.Path || after.Revision == before.Revision {
 		t.Fatalf("%+v", after)
 	}
-	for _, s := range []*Server{a, b} {
-		mustBytes(t, filepath.Join(target, s.conversationName()), storageChat)
-		mustBytes(t, filepath.Join(before.Path, s.conversationName()), storageChat)
+	for _, name := range []string{a.conversationName(), sibling} {
+		mustBytes(t, filepath.Join(target, name), storageChat)
+		mustBytes(t, filepath.Join(before.Path, name), storageChat)
 	}
 	mustBytes(t, filepath.Join(config, "secrets", "unrelated"), "protected credential")
 	if _, err := os.Stat(filepath.Join(target, "secrets")); !os.IsNotExist(err) {
 		t.Fatal("credentials moved")
 	}
 	next := `{"version":1,"chats":[{"id":"two"}]}`
-	if code, _ := chatRequest(t, bts, "PUT", digestOf([]byte(storageChat)), next, true, ""); code != 200 {
-		t.Fatal("other server did not follow move", code)
+	if code, _ := chatRequest(t, ats, "PUT", digestOf([]byte(storageChat)), next, true, ""); code != 200 {
+		t.Fatal("the writer did not follow the move", code)
 	}
-	next = savedConversationBytes(t, b, bts)
-	mustBytes(t, filepath.Join(target, b.conversationName()), next)
-	mustBytes(t, filepath.Join(before.Path, b.conversationName()), storageChat)
-	if code, _ := chatRequest(t, bts, "PUT", digestOf([]byte(storageChat)), storageChat, true, ""); code != 409 {
+	next = savedConversationBytes(t, a, ats)
+	mustBytes(t, filepath.Join(target, a.conversationName()), next)
+	mustBytes(t, filepath.Join(before.Path, a.conversationName()), storageChat)
+	if code, _ := chatRequest(t, ats, "PUT", digestOf([]byte(storageChat)), storageChat, true, ""); code != 409 {
 		t.Fatal("stale write accepted", code)
 	}
-	restarted, rts := startDesk(t, b.cfg)
+	cfg := a.cfg
+	cfg.Root = nil
+	storageTestMust(t, a.Close())
+	ats.Close()
+	restarted, rts := startDesk(t, cfg)
 	defer restarted.Close()
 	defer rts.Close()
 	if code, reply := chatRequest(t, rts, "GET", "", "", true, ""); code != 200 || string(reply.Content) != next {
-		t.Fatal("restart lost history", code)
+		t.Fatalf("restart lost history: %d (read-only %v: %v)", code, restarted.storageReadOnly, restarted.storageProblem)
 	}
 }
 
