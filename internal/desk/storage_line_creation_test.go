@@ -235,3 +235,59 @@ func TestStorageLineOffConcurrentCreators(t *testing.T) {
 		t.Fatalf("drafts folder .gitignore: %q %v", data, err)
 	}
 }
+
+// The drafts folder gets its .gitignore wherever it has none, whoever made
+// the folder: a creator that lost the race to write it does not leave it
+// without one for good. One already there is kept as it is.
+func TestDraftsIgnoreWrittenWhereMissing(t *testing.T) {
+	for _, off := range []bool{true, false} {
+		t.Run(storageLineName(off), func(t *testing.T) {
+			s := creationServer(t, off)
+			// The folder exists, made by a creator that never wrote its
+			// .gitignore.
+			bare, _, err := openOwnFolderBy(s.root, strings.Split(dialectDraftDir, "/"), true, "dialect drafts", folderCreation{legacy: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bare.Close()
+			if !off {
+				// A window another request holds is not waited for and
+				// refuses nothing; what is still missing is written later.
+				held, err := storageCreatorAcquire(bare)
+				if err != nil {
+					t.Fatal(err)
+				}
+				drafts, err := s.openDialectDrafts(true)
+				if err != nil {
+					t.Fatal("drafts refused while another creator holds their window:", err)
+				}
+				drafts.Close()
+				if _, err := bare.Lstat(".gitignore"); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal(".gitignore written outside the creator window", err)
+				}
+				storageTestMust(t, held.Close())
+			}
+			drafts, err := s.openDialectDrafts(true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			drafts.Close()
+			if data, err := readPrivateData(bare, ".gitignore", 16); err != nil || string(data) != "*\n" {
+				t.Fatalf("missing .gitignore not written: %q %v", data, err)
+			}
+			storageTestMust(t, writePrivateData(bare, ".gitignore", []byte("*\n!kept\n")))
+			drafts, err = s.openDialectDrafts(true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			drafts.Close()
+			if !off {
+				// Inside the window too: one another creator wrote first stays.
+				storageTestMust(t, storageCreateDraftIgnore(bare))
+			}
+			if data, err := readPrivateData(bare, ".gitignore", 16); err != nil || string(data) != "*\n!kept\n" {
+				t.Fatalf("existing .gitignore replaced: %q %v", data, err)
+			}
+		})
+	}
+}

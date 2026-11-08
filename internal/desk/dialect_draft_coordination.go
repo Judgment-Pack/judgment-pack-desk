@@ -22,19 +22,35 @@ func (s *Server) openDialectDrafts(create bool) (*os.Root, error) {
 	if create && s.storageReadOnly {
 		return nil, errStorageEnrollmentUnresolved
 	}
-	root, made, err := openOwnFolderBy(s.root, strings.Split(dialectDraftDir, "/"), create, "dialect drafts", s.creation(nil))
-	if err == nil && made {
-		if s.deskOwner().storageLineOff {
-			// As v0.13.2 wrote it: no creator window to be refused by.
-			err = writePrivateData(root, ".gitignore", []byte("*\n"))
-		} else {
-			err = storageCreateDraftIgnore(root)
-		}
-		if err != nil {
+	root, _, err := openOwnFolderBy(s.root, strings.Split(dialectDraftDir, "/"), create, "dialect drafts", s.creation(nil))
+	if err == nil && create {
+		if err = s.ensureDraftIgnore(root); err != nil {
 			root.Close()
+			return nil, err
 		}
 	}
 	return root, err
+}
+
+// ensureDraftIgnore gives the drafts folder its `.gitignore` wherever it has
+// none, whoever made the folder: a creator that lost the race to write it, or
+// failed after making the folder, does not leave the folder without one for
+// good, since every opener that may create checks again. A `.gitignore`
+// already there is left as it is. With the storage line on it is written in
+// the folder's creator window; a window another request holds is not waited
+// for, and the next opener writes what is still missing. Off, it is written
+// as v0.13.2 wrote it.
+func (s *Server) ensureDraftIgnore(root *os.Root) error {
+	if _, err := root.Lstat(".gitignore"); !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if s.deskOwner().storageLineOff {
+		return writePrivateData(root, ".gitignore", []byte("*\n"))
+	}
+	if err := storageCreateDraftIgnore(root); err != nil && !lockHeld(err) {
+		return err
+	}
+	return nil
 }
 
 // This local workflow lease orders promotion against edits/discard and chat
@@ -75,12 +91,16 @@ func (s *Server) lockDialectDraftWorkflow(ctx context.Context) (func(), error) {
 // All cooperating creators enter the same actual draft-root window, including
 // a configuration that found the directory already present. Existing content
 // remains ordinary data; this lease is exclusion only and grants no Q promise.
+// A `.gitignore` another creator wrote first, inside the window, is kept.
 func storageCreateDraftIgnore(root *os.Root) (err error) {
 	lease, err := storageCreatorAcquire(root)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, lease.Close()) }()
+	if _, err = root.Lstat(".gitignore"); !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return writePrivateData(root, ".gitignore", []byte("*\n"))
 }
 
