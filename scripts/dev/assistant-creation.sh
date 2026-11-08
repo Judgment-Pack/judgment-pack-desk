@@ -26,7 +26,7 @@ node_command=(bash -c '
   --outfile="$2/reference.mjs"
  node "$2/reference.mjs" "$2/outputs"
  cd "$1/web"
- JPS_CREATION_OUTPUTS="$2/outputs" JPS_CREATION_NATIVE_OUTPUTS="$2/outputs/native" ./node_modules/.bin/vitest run src/routes/CreationRoutes.test.tsx src/assistant/serverRuns/creationContinuation.test.ts
+ JPS_CREATION_OUTPUTS="$2/outputs" ./node_modules/.bin/vitest run src/routes/CreationRoutes.test.tsx src/assistant/serverRuns/creationContinuation.test.ts
 ' assistant-creation "$root" "$tmp")
 if [ -n "${JPDEV_WRAP:-}" ];then node_command=(flock "$JPDEV_LOCK" "$JPDEV_WRAP" node -- "${node_command[@]}");fi
 "${node_command[@]}"

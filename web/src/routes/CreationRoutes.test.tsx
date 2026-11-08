@@ -36,7 +36,9 @@ async function setup(content:unknown={version:1,chats:[]},drafts=memoryDraftPers
  let saved=content
  const read=async()=>({project:'/project',sha256:'saved',content:structuredClone(saved),chatRevisions:Object.fromEntries((saved as {chats:Chat[]}).chats.map(chat=>[chat.id,revision]))})
  const store=new ChatStore('/project',{read,write:async document=>{saved=structuredClone(document);return read()}},drafts);fixture.store=store;stores.push(store);await store.load()
- const fetch=vi.fn(async(path:unknown)=>String(path).startsWith('/api/assistant-runs/owners/')?new Response(JSON.stringify({runs:fixture.snapshot?[fixture.snapshot]:[]}),{headers:{'Content-Type':'application/json'}}):new Response(JSON.stringify({root:'/project',files:[],version:1,subjects:{},reviews:[],settings:{},suites:{}}),{headers:{'Content-Type':'application/json'}}));vi.stubGlobal('fetch',fetch)
+ // A run start first registers its model-free document context; acknowledge it like the chassis.
+ const contexts:Record<string,unknown>={'/api/assistant-contexts/documents':{document:'c'.repeat(64)},'/api/assistant-contexts/documents/release':{released:true}}
+ const fetch=vi.fn(async(path:unknown)=>Object.hasOwn(contexts,String(path))?new Response(JSON.stringify(contexts[String(path)]),{headers:{'Content-Type':'application/json'}}):String(path).startsWith('/api/assistant-runs/owners/')?new Response(JSON.stringify({runs:fixture.snapshot?[fixture.snapshot]:[]}),{headers:{'Content-Type':'application/json'}}):new Response(JSON.stringify({root:'/project',files:[],version:1,subjects:{},reviews:[],settings:{},suites:{}}),{headers:{'Content-Type':'application/json'}}));vi.stubGlobal('fetch',fetch)
  giveThisPageASessionForTesting('creation-route-session')
  const runtime=stubClient({list_packs:()=>({text:'{"status":"valid","packs":[]}'})});runtime.client.listTools=async()=>({tools:[]})
  return {store,fetch,runtime,remote:(value:unknown,digest:string)=>{saved=value;revision=digest}}

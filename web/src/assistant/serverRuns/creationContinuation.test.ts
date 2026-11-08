@@ -12,7 +12,6 @@ import {decodeSnapshot,parseRunJSON} from './decode'
 import {readCreation,withCreation} from './creation'
 
 const outputs=process.env.JPS_CREATION_OUTPUTS
-const nativeOutputs=process.env.JPS_CREATION_NATIVE_OUTPUTS??(outputs?`${outputs}/native`:undefined)
 const stores:ChatStore[]=[]
 afterEach(()=>{stores.forEach(store=>store.dispose());stores.length=0;vi.unstubAllGlobals()})
 const field=(raw:string,key:string)=>wireField(raw,key)!
@@ -29,8 +28,11 @@ const acceptedFacts=(issues:string)=>{
  if(tree.kind!=='array')throw Error('issue fixture must be an array')
  return new Map(tree.items.map(issue=>{const original=memberOf(issue,'original')!,id=memberOf(original,'id')!;if(id.kind!=='string')throw Error('missing fixture ID');return [id.value,wireJSON(memberOf(original,'facts')!,true)]}))
 }
-it.skipIf(!outputs).each([{engine:'api',order:'first',inject:false},{engine:'api',order:'last',inject:false},{engine:'api',order:'first',inject:true},{engine:'api',order:'last',inject:true},{engine:'native',order:'first',inject:false},{engine:'native',order:'last',inject:false}])('continues accepted two-issue data with default writers and reload: $engine $order first, handwritten wire $inject',async({engine,order,inject})=>{
- const directory=engine==='native'?nativeOutputs:outputs
+// Native-engine creation reviews are refused before admission in v0.14.0 (Desk #703), so the
+// native producer writes no review records; TestAssistantCreationNumericNativeContinuation
+// asserts that refusal on the Go side.
+it.skipIf(!outputs).each([{order:'first',inject:false},{order:'last',inject:false},{order:'first',inject:true},{order:'last',inject:true}])('continues accepted two-issue data with default writers and reload: $order first, handwritten wire $inject',async({order,inject})=>{
+ const directory=outputs
  const records=['02-establish-cases','03-propose-correction','04-approve-correction','05-propose-correction','06-approve-correction'].map(name=>{
   let text=readFileSync(`${directory}/${order}/${name}.json`,'utf8')
   if(inject){
