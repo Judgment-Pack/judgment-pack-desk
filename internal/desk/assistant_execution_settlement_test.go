@@ -236,7 +236,19 @@ func (f *assistantNativeSettlementFixture) run(t *testing.T, mode string) *assis
 		return adapter.AgentToolAnswer{Text: "The exact call awaits an explicit decision."}, context.Canceled
 	}}
 	request := adapter.AgentRequest{Model: "shared-model", Prompt: "Exact bounded native settlement fixture.", Instructions: "Fixture data only.", Effort: "medium", Phase: "author", Tools: []adapter.AgentTool{{Name: "desk_fixture_act", Description: "write_fixture: exact journal fixture", InputSchema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"integer"}},"additionalProperties":false}`)}}}
-	go func() { r.done <- f.agent.Run(provider, request, callbacks) }()
+	// Agent v0.13.2 runs a native provider call inside its route's durable
+	// claim (InvokeNativeRoute: a read "agent" dispatch for the request's
+	// model and exact request), acknowledged before the host is entered; an
+	// approval stop is qualified against that open claim. Make the call
+	// inside the same claim, as the native adapter does.
+	intent, err := json.Marshal(request)
+	assistantRunMust(t, err)
+	go func() {
+		_, err := runcontext.InvokeDurable(provider, f.binding, "agent", "fixture-native-provider", request.Model, intent, true, func([]byte) (struct{}, error) {
+			return struct{}{}, f.agent.Run(provider, request, callbacks)
+		}, func(struct{}) bool { return true }, nil)
+		r.done <- err
+	}()
 	t.Cleanup(func() {
 		cancel()
 		r.allowReturn()
