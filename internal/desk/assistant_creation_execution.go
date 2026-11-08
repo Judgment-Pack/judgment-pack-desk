@@ -3,7 +3,9 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
@@ -500,6 +502,21 @@ func (e *assistantRunExecution) completeAssistantCreation(ctx context.Context) e
 		// No adapter holds the canonical writer here; the notice is part of
 		// the host's completing commit (see canonicalHostStatus).
 		err = e.canonicalHostStatus(ctx, "complete", notice)
+		if errors.As(err, new(assistantCanonicalUndelivered)) {
+			// The commit landed with the notice in it; only the live delivery
+			// failed after it. Desk's run state follows the commit.
+			err = nil
+		}
+		if err == nil {
+			// Once the completing commit has landed the run is complete, and
+			// a Stop that lands after it (which also ends ctx) must not leave
+			// Desk's run state behind the canonical checkpoint: the state is
+			// set under a bounded context the Stop does not end. Nothing is
+			// run or committed again.
+			retained, finish := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer finish()
+			ctx = retained
+		}
 	} else if err = e.Checkpoint(ctx, cp); err == nil {
 		err = e.publishCanonicalHostEvent(ctx, notice)
 	}

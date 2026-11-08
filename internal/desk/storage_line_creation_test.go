@@ -1,7 +1,9 @@
 package desk
 
 import (
+	"context"
 	"errors"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,5 +291,87 @@ func TestDraftsIgnoreWrittenWhereMissing(t *testing.T) {
 				t.Fatalf("existing .gitignore replaced: %q %v", data, err)
 			}
 		})
+	}
+}
+
+// A model-free creation's completing commit carries its notice. When a Stop
+// lands after that commit and before the notice's live delivery, the delivery
+// is refused, but Desk's run state still follows the commit: complete, like
+// the canonical checkpoint, with the notice stored once and nothing committed
+// again. The source, request and citation are handwritten fixtures (as in
+// assistantRunStorageValidationCreation), not a recorded model result.
+func TestCreationCompletionStateFollowsCommitWhenStopped(t *testing.T) {
+	store, binding, cp := assistantRunFixture(t)
+	location := "attachment:11111111-1111-1111-1111-111111111111/sha256:" + strings.Repeat("a", 64) + "/page/1"
+	candidate := `{"sources":[{"id":"source-one","locator":{"value":"https://example.invalid/report"},"citation":{"location":"` + location + `","excerpt":"Retained exact quote."}}]}`
+	source := []byte(`{"checkpoint":{"state":{"candidates":[{"text":` + string(assistantChatJSON(candidate)) + `}],"turns":[],"cases":[],"unknowns":[],"expectationIssues":[]}}}`)
+	request := []byte(`{"creation":{"kind":"check","candidateDigest":"` + digestOf([]byte(candidate)) + `"}}`)
+	binding.SourceDigests = []string{digestOf(source)}
+	binding.RequestDigest = digestOf(request)
+	lease, err := store.Acquire(t.Context())
+	assistantRunMust(t, err)
+	t.Cleanup(func() { _ = lease.Close() })
+	record, created, err := lease.Admit(t.Context(), binding, "creation-admission", digestOf([]byte("creation body")), func() error { return nil })
+	assistantRunMust(t, err)
+	if !created {
+		t.Fatal("not created")
+	}
+	writer, err := lease.Writer(t.Context(), binding, record.ID)
+	assistantRunMust(t, err)
+	assistantRunMust(t, writer.initializeCanonical(t.Context(), cp))
+	record, err = store.Read(t.Context(), binding, record.ID)
+	assistantRunMust(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e := &assistantRunExecution{service: &assistantRunService{server: store.server, subscribers: map[uint64]assistantRunSubscriber{}}, source: assistantRunSource{Original: source, Request: request, Binding: binding},
+		request: httptest.NewRequest("POST", "/api/assistant-runs", nil).WithContext(ctx), record: record, writer: writer, ctx: ctx, generation: 1, lifecycle: "running"}
+	e.cancel = func() { e.closeCanonicalDispatch(); cancel() }
+	invocation := context.WithValue(ctx, assistantInvocationGenerationKey{}, assistantInvocationGeneration{owner: e, number: 1})
+	input, err := compileAssistantCreationInput(e.source)
+	assistantRunMust(t, err)
+	proofs := []assistantCreationSourceProof{{Location: location, AttachmentDigest: strings.Repeat("a", 64), GatewayDigest: strings.Repeat("b", 64)}}
+	input.Scope.EvidenceDigest = digestOf(assistantChatJSON(proofs))
+	assistantRunMust(t, e.retainAssistantCreation(invocation, input, assistantCreationReceipt{
+		Source: source, Request: request, Action: "check", Scope: input.Scope, Candidate: candidate,
+		Unknowns: []string{}, Cases: []assistantCreationCase{}, Issues: []assistantCreationIssue{}, Sources: proofs,
+		Citations: []assistantCreationCitation{{SourceID: "source-one", Location: location, URL: "https://example.invalid/report", Quote: "Retained exact quote.", Traced: true}},
+	}))
+
+	stopped := false
+	testHookCanonicalHostCommitted = func(owner *assistantRunExecution) {
+		if owner == e {
+			stopped = true
+			e.cancel() // Stop: dispatch closed and the invocation ended.
+		}
+	}
+	defer func() { testHookCanonicalHostCommitted = nil }()
+	_ = e.completeAssistantCreation(invocation) // the chat projection has no chat here
+	if !stopped {
+		t.Fatal("completion did not reach its commit")
+	}
+	after, err := store.Read(context.Background(), binding, record.ID)
+	assistantRunMust(t, err)
+	if after.Checkpoint == nil || after.Checkpoint.Status != "complete" {
+		t.Fatal("completing commit did not land", after.Checkpoint)
+	}
+	if after.State != "complete" {
+		t.Fatalf("run state %q while the canonical checkpoint is complete", after.State)
+	}
+	notices := 0
+	for _, event := range after.Events {
+		if event.Event.Message != nil && event.Event.Message.Text == "Creation review retained. Checks do not authorize Save." {
+			notices++
+		}
+	}
+	if notices != 1 {
+		t.Fatal("completion notice not stored exactly once", notices)
+	}
+	// Execute's own clean-up after an error leaves the completed run as it is.
+	assistantRunMust(t, writer.Stop(context.Background()))
+	final, err := store.Read(context.Background(), binding, record.ID)
+	assistantRunMust(t, err)
+	if final.State != "complete" || final.Revision != after.Revision {
+		t.Fatal("a completed run was changed after its completion", final.State)
 	}
 }

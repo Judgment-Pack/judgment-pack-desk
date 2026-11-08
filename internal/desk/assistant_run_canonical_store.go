@@ -237,13 +237,29 @@ func (e *assistantRunExecution) canonicalHostStatus(ctx context.Context, status 
 	if err != nil {
 		return err
 	}
+	if testHookCanonicalHostCommitted != nil {
+		testHookCanonicalHostCommitted(e)
+	}
 	for _, notice := range notices {
 		if err := e.deliverCanonicalEvent(ctx, notice); err != nil {
-			return err
+			return assistantCanonicalUndelivered{err}
 		}
 	}
 	return nil
 }
+
+// assistantCanonicalUndelivered is canonicalHostStatus's answer when its
+// commit landed, carrying the notices, and only a notice's live delivery
+// failed after it: a Stop landing between the two, for one. The run's
+// canonical status is the committed one; nothing is to be committed again.
+type assistantCanonicalUndelivered struct{ err error }
+
+func (u assistantCanonicalUndelivered) Error() string { return u.err.Error() }
+func (u assistantCanonicalUndelivered) Unwrap() error { return u.err }
+
+// testHookCanonicalHostCommitted runs after canonicalHostStatus's commit has
+// landed and before its notices are delivered. Nil outside tests.
+var testHookCanonicalHostCommitted func(*assistantRunExecution)
 
 // assistantCanonicalHostEvent stores a host notice as the root writer stores
 // an event it is handed: stamped, under the root scope, in canonical JSON.
