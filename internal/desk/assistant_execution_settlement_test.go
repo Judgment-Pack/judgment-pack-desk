@@ -458,3 +458,25 @@ func TestAssistantNativeSettlementExactScopeAndProof(t *testing.T) {
 		}
 	}
 }
+
+// Callbacks that have all joined have joined even when the owner was canceled
+// meanwhile, as a refused callback cancels it: the join is never reported as
+// timed out at random.
+func TestAssistantNativeSettlementJoinedBeforeOwnerCancel(t *testing.T) {
+	owner, cancel := context.WithCancel(t.Context())
+	cancel()
+	for i := 0; i < 200; i++ {
+		s := &assistantNativeSettlement{joined: make(chan struct{}), callbacks: map[*assistantNativeCallback]struct{}{}}
+		if err := s.closeAndJoin(owner); err != nil {
+			t.Fatal("joined callbacks reported as not joined", i, err)
+		}
+		if s.aborted || !s.joinedClosed {
+			t.Fatal("joined settlement marked aborted")
+		}
+	}
+	// A callback that has not joined still bounds the wait by the owner.
+	s := &assistantNativeSettlement{joined: make(chan struct{}), callbacks: map[*assistantNativeCallback]struct{}{{}: {}}}
+	if err := s.closeAndJoin(owner); err == nil || !s.aborted {
+		t.Fatal("an unjoined callback did not abort under a canceled owner", err)
+	}
+}

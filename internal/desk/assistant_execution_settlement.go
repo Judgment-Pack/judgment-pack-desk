@@ -92,6 +92,13 @@ func (s *assistantNativeSettlement) closeAndJoin(owner context.Context) error {
 	s.closeJoinedLocked()
 	joined := s.joined
 	s.mu.Unlock()
+	// Callbacks that have already joined have joined, whatever the owner's
+	// state: a select over both ready cases would choose at random.
+	select {
+	case <-joined:
+		return nil
+	default:
+	}
 	bounded, cancel := context.WithTimeout(owner, 5*time.Second)
 	defer cancel()
 	select {
