@@ -93,7 +93,7 @@ func readExchangeHistory(root *os.Root) (exchangeHistory, error) {
 	return h, nil
 }
 func (s *Server) exchangeRoot() (*os.Root, error) {
-	root, _, e := openOwnFolder(s.root, strings.Split(exchangeDirectory, "/"), true, "Exchange imports")
+	root, _, e := openOwnFolderBy(s.root, strings.Split(exchangeDirectory, "/"), true, "Exchange imports", s.creation(nil))
 	return root, e
 }
 func (s *Server) exchangeCheck(ctx context.Context, document []byte) (string, string, error) {

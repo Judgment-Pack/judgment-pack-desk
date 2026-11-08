@@ -87,6 +87,9 @@ type localGateway struct {
 	problem            error
 	launchBundleDigest string
 	catalogObservation *localGatewayCatalogObservation
+	// folders is how the Desk that made this gateway makes its missing
+	// private folders (Server.creation).
+	folders folderCreation
 }
 
 func (g *localGateway) close() {
@@ -350,7 +353,7 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	// Each process owns a separate append-only registry. Saved document proofs
 	// retain their sealed registry entries, so reopening them needs the stable
 	// public pin, not a running instance's historic HTTP endpoint.
-	root, err := openPrivateDataRoot(platformPath(store.dir, "local-gateway"), true)
+	root, err := openPrivateDataRootBy(platformPath(store.dir, "local-gateway"), true, g.folders)
 	if err != nil {
 		return nil, err
 	}

@@ -745,7 +745,7 @@ func (s *Server) reviewedCopies(create bool) (*os.Root, error) {
 	return s.reviewedCopiesWithCreator(create, nil)
 }
 func (s *Server) reviewedCopiesWithCreator(create bool, original *storageCreatorLease) (*os.Root, error) {
-	root, made, err := openOwnFolderWithCreator(s.root, strings.Split(reviewedCopiesDir, "/"), create, "reviewed copies", original)
+	root, made, err := openOwnFolderBy(s.root, strings.Split(reviewedCopiesDir, "/"), create, "reviewed copies", s.creation(original))
 	if err != nil {
 		return nil, err
 	}

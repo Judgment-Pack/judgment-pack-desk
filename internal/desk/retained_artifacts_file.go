@@ -36,10 +36,13 @@ func retainedArtifactsForProject(project *os.Root) retainedArtifactRepository {
 	return fileRetainedArtifactRepository{open: func(create bool) (*os.Root, error) { return openRetainedArtifactsWithin(project, create) }}
 }
 func (s *Server) openRetainedArtifacts(create bool) (*os.Root, error) {
-	return openRetainedArtifactsWithin(s.root, create)
+	return openRetainedArtifactsBy(s.root, create, s.creation(nil))
 }
 func openRetainedArtifactsWithin(project *os.Root, create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(project, strings.Split(retainedArtifactDirectory, "/"), create, "retained artifacts")
+	return openRetainedArtifactsBy(project, create, folderCreation{})
+}
+func openRetainedArtifactsBy(project *os.Root, create bool, how folderCreation) (*os.Root, error) {
+	root, made, err := openOwnFolderBy(project, strings.Split(retainedArtifactDirectory, "/"), create, "retained artifacts", how)
 	if err == nil && made {
 		err = writePrivateData(root, ".gitignore", []byte("*\n"))
 		if err != nil {

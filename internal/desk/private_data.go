@@ -16,7 +16,15 @@ import (
 
 // Private data uses the existing ownership rules, but owns no credential files.
 // Walk through pinned parents and compare each opened directory with its entry.
+// A missing folder is made the storage line's way (folderCreation's zero
+// value); a Server makes its own with openPrivateDataRootBy and s.creation.
 func openPrivateDataRoot(dir string, create bool) (*os.Root, error) {
+	return openPrivateDataRootBy(dir, create, folderCreation{})
+}
+
+// openPrivateDataRootBy is openPrivateDataRoot with a missing folder made the
+// way how says.
+func openPrivateDataRootBy(dir string, create bool, how folderCreation) (*os.Root, error) {
 	if !custodyChecked || !filepath.IsAbs(dir) || strings.ContainsAny(dir, "\x00\r\n") {
 		return nil, errors.New("chat storage requires an absolute path on a platform with file ownership checks")
 	}
@@ -30,12 +38,15 @@ func openPrivateDataRoot(dir string, create bool) (*os.Root, error) {
 		label = filepath.Join(label, part)
 		info, err := root.Lstat(part)
 		if errors.Is(err, os.ErrNotExist) && create {
-			created, _, createErr := storageCooperatingDirectory(context.Background(), root, part, nil)
+			created, _, createErr := how.makeFolder(root, part)
 			if createErr != nil {
 				root.Close()
 				return nil, createErr
 			}
-			createErr = errors.Join(syncPrivateDirectory(root), created.Close())
+			createErr = syncPrivateDirectory(root)
+			if created != nil {
+				createErr = errors.Join(createErr, created.Close())
+			}
 			if createErr != nil {
 				root.Close()
 				return nil, createErr
@@ -168,6 +179,24 @@ func writePrivateDataCommit(root *os.Root, name string, data []byte) (publicatio
 		}
 		defer func() { err = errors.Join(err, lease.Close()) }()
 	}
+	return writePrivateDataStaged(root, name, data)
+}
+
+// writeDataLocation writes the chat data location file in settings: with the
+// storage line on, in the settings folder's creator window
+// (writePrivateDataCommit); off, as v0.13.2 wrote it, with no window to be
+// refused by a folder another request is making there.
+func (s *Server) writeDataLocation(settings *os.Root, data []byte) error {
+	if s.deskOwner().storageLineOff {
+		_, err := writePrivateDataStaged(settings, dataLocationName, data)
+		return err
+	}
+	return writePrivateData(settings, dataLocationName, data)
+}
+
+// writePrivateDataStaged is writePrivateDataCommit's write itself: staged,
+// synced, renamed over name, and read back.
+func writePrivateDataStaged(root *os.Root, name string, data []byte) (publicationObserved bool, err error) {
 	file, stage, err := newDataStage(root)
 	if err != nil {
 		return publicationObserved, err
@@ -340,6 +369,23 @@ func claimPrivateData(root *os.Root, name string, data []byte) (err error) {
 		}
 		defer func() { err = errors.Join(err, lease.Close()) }()
 	}
+	return claimPrivateFile(root, name, data)
+}
+
+// claimDataMarker claims an empty chat data folder for this Desk with its
+// marker: with the storage line on, in the folder's creator window
+// (claimPrivateData); off, as v0.13.2 claimed it. Either way the marker is
+// made only where none is, so a second configuration never replaces it.
+func (s *Server) claimDataMarker(root *os.Root, data []byte) error {
+	if s.deskOwner().storageLineOff {
+		return claimPrivateFile(root, dataMarkerName, data)
+	}
+	return claimPrivateData(root, dataMarkerName, data)
+}
+
+// claimPrivateFile is claimPrivateData's claim itself: name made exclusively,
+// written and synced, with its folder.
+func claimPrivateFile(root *os.Root, name string, data []byte) error {
 	file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY|openNoFollow, custodyFileMode)
 	if err != nil {
 		return err

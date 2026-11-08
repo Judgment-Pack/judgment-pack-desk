@@ -22,9 +22,15 @@ func (s *Server) openDialectDrafts(create bool) (*os.Root, error) {
 	if create && s.storageReadOnly {
 		return nil, errStorageEnrollmentUnresolved
 	}
-	root, made, err := openOwnFolder(s.root, strings.Split(dialectDraftDir, "/"), create, "dialect drafts")
+	root, made, err := openOwnFolderBy(s.root, strings.Split(dialectDraftDir, "/"), create, "dialect drafts", s.creation(nil))
 	if err == nil && made {
-		if err = storageCreateDraftIgnore(root); err != nil {
+		if s.deskOwner().storageLineOff {
+			// As v0.13.2 wrote it: no creator window to be refused by.
+			err = writePrivateData(root, ".gitignore", []byte("*\n"))
+		} else {
+			err = storageCreateDraftIgnore(root)
+		}
+		if err != nil {
 			root.Close()
 		}
 	}
@@ -50,6 +56,9 @@ func (s *Server) lockDialectDraftWorkflow(ctx context.Context) (func(), error) {
 	if s.storageEnrollment != nil {
 		named, e := storageOpenFile(root, "workflow.lock", 0)
 		lock, err = named.file, e
+	} else if s.deskOwner().storageLineOff {
+		// v0.13.2's workflow lock, made where missing without a creator window.
+		lock, err = root.OpenFile("workflow.lock", os.O_CREATE|os.O_RDWR|openNoFollow|openNonBlocking, 0600)
 	} else {
 		lock, err = storageCreateDraftWorkflowLock(ctx, root)
 	}

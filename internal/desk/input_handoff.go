@@ -443,7 +443,7 @@ func (s *Server) prepareReviewedInputsWithRelease(ctx context.Context, doc input
 	if err != nil {
 		return err
 	}
-	root, err := openPrivateDataRoot(s.inputHandoffPath(), true)
+	root, err := openPrivateDataRootBy(s.inputHandoffPath(), true, s.creation(nil))
 	if err != nil {
 		return err
 	}

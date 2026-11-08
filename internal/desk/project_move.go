@@ -395,7 +395,7 @@ func (s *Server) moveProjectFolder(ctx context.Context, destination, parentIdent
 	} else if found {
 		return errors.New("An earlier project move needs recovery. Restart Desk first.")
 	}
-	private, _, err := openOwnFolderWithCreator(s.root, []string{startupIdentityDir}, true, startupIdentityKept, projectLease)
+	private, _, err := openOwnFolderBy(s.root, []string{startupIdentityDir}, true, startupIdentityKept, s.creation(projectLease))
 	if err != nil {
 		return err
 	}

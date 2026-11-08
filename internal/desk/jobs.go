@@ -96,6 +96,9 @@ type jobsCompanion struct {
 	// Isolated fixtures proxy this inherited socket to delay/drop a reply after
 	// its durable transaction; the actual Runner and Runtime remain unchanged.
 	authoritySocketForTest func() (net.Conn, *os.File, error)
+	// folders is how the Desk that made this companion makes its missing
+	// private folders (Server.creation).
+	folders folderCreation
 }
 
 func (s *Server) initJobs() {
@@ -124,7 +127,7 @@ func (s *Server) initJobs() {
 		s.log.Printf("desk: Jobs retained namespace is unavailable")
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: location.Dir, workspace: location.Workspace, owner: location.Owner, stop: make(chan struct{})}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: location.Dir, workspace: location.Workspace, owner: location.Owner, stop: make(chan struct{}), folders: s.creation(nil)}
 	if s.policyAuthorityMachine != nil {
 		ownership, e := s.policyAuthorityMachine.executorForProject(s.project, s.jobs.workspace)
 		s.jobs.ownership, s.jobs.held = ownership, e
@@ -207,7 +210,7 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 		return "", "", j.holdOwned(errors.New("absolute runner and Runtime paths required"))
 	}
 	if j.ownership != nil {
-		root, err := openPrivateDataRoot(j.dir, true)
+		root, err := openPrivateDataRootBy(j.dir, true, j.folders)
 		if err != nil {
 			return "", "", j.holdOwned(runnerOwnershipUnavailable())
 		}

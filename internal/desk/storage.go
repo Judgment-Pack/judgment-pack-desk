@@ -145,7 +145,7 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 			return nil, err
 		}
 		data = s.encodeDataLocation(location)
-		if err = writePrivateData(settings, dataLocationName, data); err != nil {
+		if err = s.writeDataLocation(settings, data); err != nil {
 			store.root.Close()
 			return nil, err
 		}
@@ -196,7 +196,7 @@ func (s *Server) openChatDataAt(location dataLocation, revision string, create b
 	if location.Path == s.configDir {
 		root, err = s.assistant.root.OpenRoot(".")
 	} else {
-		root, err = openPrivateDataRoot(location.Path, create)
+		root, err = openPrivateDataRootBy(location.Path, create, s.creation(nil))
 	}
 	if err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func (s *Server) openChatDataAt(location dataLocation, revision string, create b
 			return nil, errors.New("choose an empty folder for chat data; existing files will not be combined")
 		}
 		markerBytes, _ = json.Marshal(dataMarker{Version: 1, Owner: s.storageOwner()})
-		err = claimPrivateData(root, dataMarkerName, markerBytes)
+		err = s.claimDataMarker(root, markerBytes)
 	}
 	var marker dataMarker
 	if err == nil {
@@ -527,7 +527,7 @@ func (s *Server) changeChatStorageUsingCustody(w http.ResponseWriter, r *http.Re
 		return
 	}
 	updated := s.encodeDataLocation(target.location)
-	if err = writePrivateData(settings, dataLocationName, updated); err != nil {
+	if err = s.writeDataLocation(settings, updated); err != nil {
 		// A rename may have landed before a read-back/fsync error. Retain the
 		// destination if it is authoritative; never delete its copied files.
 		landed, readErr := readPrivateData(settings, dataLocationName, 16<<10)

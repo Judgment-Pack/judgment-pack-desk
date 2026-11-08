@@ -491,7 +491,7 @@ func testResearchContinuationCopiesProofs(t *testing.T, backend string) {
 	child.CreatedAt = "2026-10-13T12:00:00Z"
 	child.Recipe.Limits.Pages = 0
 	child.Recipe.Limits.Searches = 0
-	if err = s.writeResearchReview(t.Context(), root, child, rr); err != nil {
+	if err = s.writeResearchReview(t.Context(), root, child, rr, s.creation(nil)); err != nil {
 		t.Fatal(err)
 	}
 	cr, _ := openInputResearch(root, child.ID, false)

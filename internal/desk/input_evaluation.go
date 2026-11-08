@@ -76,7 +76,7 @@ type inputEvaluation struct {
 }
 
 func (s *Server) inputEvaluationRoot(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(inputEvaluationsDir, "/"), create, "input evaluations")
+	root, made, err := openOwnFolderBy(s.root, strings.Split(inputEvaluationsDir, "/"), create, "input evaluations", s.creation(nil))
 	if err == nil && made {
 		err = writePrivateData(root, ".gitignore", []byte("*\n"))
 		if err != nil {

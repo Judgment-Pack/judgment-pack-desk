@@ -251,7 +251,7 @@ func (s *Server) createEvaluationReview(ctx context.Context, root *os.Root, b in
 			return err
 		}
 	}
-	br, _, err := openOwnFolder(root, []string{staging}, true, "evaluation review")
+	br, _, err := openOwnFolderBy(root, []string{staging}, true, "evaluation review", s.creation(nil))
 	if err != nil {
 		return err
 	}

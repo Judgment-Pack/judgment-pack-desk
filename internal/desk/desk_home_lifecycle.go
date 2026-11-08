@@ -482,7 +482,7 @@ func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) 
 	}
 	if previous != nil {
 		// Preserve completed migration metadata under platform custody.
-		archive, err := openPrivateDataRoot(filepath.Join(s.configDir, "migrations"), true)
+		archive, err := openPrivateDataRootBy(filepath.Join(s.configDir, "migrations"), true, s.creation(nil))
 		if err != nil {
 			return err
 		}

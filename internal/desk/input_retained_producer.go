@@ -552,7 +552,7 @@ func (s *Server) retainedPrivateAcquireUsing(ctx context.Context, doc inputPrepa
 	if err != nil {
 		return empty, err
 	}
-	root, err := openPrivateDataRoot(s.inputHandoffPath(), true)
+	root, err := openPrivateDataRootBy(s.inputHandoffPath(), true, s.creation(nil))
 	if err != nil {
 		return empty, err
 	}

@@ -487,7 +487,7 @@ func (s *Server) openPublicationTransaction(ctx context.Context) (*publicationTr
 // original is the caller's held project lease, or nil where the caller holds
 // none and the folder's own creator lock is taken and released here.
 func (s *Server) openPublicationTransactionWithCreator(ctx context.Context, original *storageCreatorLease) (*publicationTransaction, error) {
-	root, made, err := openOwnFolderWithCreator(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions", original)
+	root, made, err := openOwnFolderBy(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions", s.creation(original))
 	if err != nil {
 		return nil, err
 	}

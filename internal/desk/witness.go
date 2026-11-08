@@ -561,7 +561,7 @@ func (s *Server) openWitnessTokens(create bool) (*os.Root, error) {
 	if !stampingName.MatchString(name) {
 		return nil, fmt.Errorf(witnessCustodyWords, "this desk has no name its token can be kept under")
 	}
-	root, _, err := openOwnFolder(s.assistant.secrets, []string{witnessTokensDir, name}, create, witnessTokenKept)
+	root, _, err := openOwnFolderBy(s.assistant.secrets, []string{witnessTokensDir, name}, create, witnessTokenKept, s.creation(nil))
 	return root, err
 }
 
@@ -2794,7 +2794,7 @@ func (s *Server) setWitness(plan witnessPlan, submitter, token string) (*witness
 			}
 		}
 	}()
-	folder, err := openHolderFolder(handover, holder.ID, true)
+	folder, err := openHolderFolderBy(handover, holder.ID, true, s.creation(nil))
 	if err != nil {
 		return keepFailed(err)
 	}

@@ -709,7 +709,7 @@ func New(cfg Config) (*Server, error) {
 	s.registerSignIn()
 	if cfg.LocalGatewayBundle != "" {
 		executable, _ := os.Executable()
-		s.localGateway = &localGateway{bundle: cfg.LocalGatewayBundle, executable: executable, inputHandoffs: s.inputHandoffPath()}
+		s.localGateway = &localGateway{bundle: cfg.LocalGatewayBundle, executable: executable, inputHandoffs: s.inputHandoffPath(), folders: s.creation(nil)}
 	}
 	if !s.storageReadOnly {
 		s.removeStaleStaging()

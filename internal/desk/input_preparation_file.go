@@ -13,7 +13,7 @@ const inputPreparationLimit = 8 << 20
 // Private file encoding and custody belong to the file adapter. Feature code
 // must use the collection repository, including reads used for admission.
 func (s *Server) openInputPreparations(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(inputPreparationDir, "/"), create, "input preparations")
+	root, made, err := openOwnFolderBy(s.root, strings.Split(inputPreparationDir, "/"), create, "input preparations", s.creation(nil))
 	if err == nil && made {
 		err = writePrivateData(root, ".gitignore", []byte("*\n"))
 		if err != nil {

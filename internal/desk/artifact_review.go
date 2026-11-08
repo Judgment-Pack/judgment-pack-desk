@@ -127,7 +127,7 @@ func (s *Server) retainArtifactReviewWithAuthority(ctx context.Context, review a
 	if err != nil {
 		return artifactReviewReply{}, err
 	}
-	root, made, err := openOwnFolder(s.root, []string{".desk-private", "artifact-reviews"}, true, "artifact reviews")
+	root, made, err := openOwnFolderBy(s.root, []string{".desk-private", "artifact-reviews"}, true, "artifact reviews", s.creation(nil))
 	if err != nil {
 		return artifactReviewReply{}, err
 	}

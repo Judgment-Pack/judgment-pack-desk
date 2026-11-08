@@ -49,7 +49,7 @@ func (s *Server) openLegacyInfrastructure() error {
 	}
 	if s.home != nil && s.assistant.usable() {
 		for _, name := range []string{"accounts", "services"} {
-			root, err := openPrivateDataRoot(filepath.Join(s.configDir, name), true)
+			root, err := openPrivateDataRootBy(filepath.Join(s.configDir, name), true, s.creation(nil))
 			if err != nil {
 				return err
 			}
