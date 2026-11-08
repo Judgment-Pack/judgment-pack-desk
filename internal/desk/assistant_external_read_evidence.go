@@ -556,8 +556,12 @@ func (e *assistantRunExecution) verifyAssistantExternalReadReceipt(ctx context.C
 	if op == nil || in.SourceBinding == nil || in.CallID != runcontext.CallIDOf(ctx) || retained.ExternalReadEvidence.Scope != c.scope || validateAssistantExternalEvidence(run, *op, in, retained) != nil || evidence.Source != string(in.SourceBinding.SourceRecord) || evidence.Tool != op.Name || evidence.Args != retained.ExternalReadEvidence.ArgsCanonical || evidence.Result != retained.ExternalReadEvidence.ResultCanonical {
 		return false, errAssistantRunInvalid
 	}
+	// Agent v0.13.2 (#242) checks an external read's receipt after the host's
+	// execute and before its durable writer records the result: the exact
+	// claim is still "claimed" here. A check made after recording meets its
+	// exact result. An unknown or failed dispatch never verifies.
 	d := assistantCanonicalRetainedHost(run, op.Name, in)
-	if d == nil || d.State != "result" || d.Failure != nil || !assistantCanonicalHostResultMatches(run, *op, in) {
+	if d == nil || d.State != "claimed" && d.State != "result" || d.Failure != nil || d.State == "claimed" && len(d.Result) != 0 || !assistantCanonicalHostResultMatches(run, *op, in) {
 		return false, errAssistantRunDispatch
 	}
 	projected, err := e.assistantExternalProjection(ctx, run, op.Name, in.Arguments, retained.ExternalReadEvidence.Proof, retained.ExternalReadEvidence.ProjectionLimit)

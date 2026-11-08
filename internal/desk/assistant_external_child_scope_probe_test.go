@@ -270,7 +270,12 @@ func (p *assistantChildProbeState) associationMatches(a assistantChildProbeAssoc
 		if d.Scope.Task != nil {
 			task = *d.Scope.Task
 		}
-		if d.State != "result" || d.Scope.Execution != a.Scope.Execution || d.Scope.Role != a.Scope.Role || task != a.Scope.Task || d.Kind != "host" || d.Source != a.Source || d.Tool != a.Wire || !assistantHostArgumentsMatch([]byte(d.Request), a.Args) || !assistantCanonicalHostResultWireEqual(a.Result, d.Result) || bytes.Contains(d.Result, []byte(a.Token)) {
+		// Agent v0.13.2 (#242) checks the receipt before its durable writer
+		// records the result, so the claim is still claimed, with no result;
+		// once recorded, the result is the physical one and holds no token.
+		claimed := d.State == "claimed" && len(d.Result) == 0 && d.Failure == nil
+		recorded := d.State == "result" && assistantCanonicalHostResultWireEqual(a.Result, d.Result) && !bytes.Contains(d.Result, []byte(a.Token))
+		if !claimed && !recorded || d.Scope.Execution != a.Scope.Execution || d.Scope.Role != a.Scope.Role || task != a.Scope.Task || d.Kind != "host" || d.Source != a.Source || d.Tool != a.Wire || !assistantHostArgumentsMatch([]byte(d.Request), a.Args) {
 			return false
 		}
 	}

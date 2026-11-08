@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/relay"
 )
 
 func assistantExternalEvidenceVector() (assistantRunRecord, assistantHostIntent, assistantRunOperation, assistantHostResult) {
@@ -830,5 +832,87 @@ func TestAssistantExternalEvidenceWholeRecordBounds(t *testing.T) {
 	retained := assistantDialectOperation(saved, original.ID)
 	if retained == nil || !bytes.Equal(retained.Intent, original.Intent) || !bytes.Equal(retained.Result, original.Result) {
 		t.Fatal("whole-record fence clipped original source bytes")
+	}
+}
+
+// Through the actual API adapter, Agent v0.13.2 (#242) checks an external
+// read's receipt after the host's execute and before its durable writer records
+// the result, while the exact claim is still claimed. Desk's production
+// verifier must accept that claim, and the verified result must then be the
+// recorded, accepted one.
+func TestAssistantExternalEvidenceVerifiedBeforeDurableRecord(t *testing.T) {
+	f := newAssistantSearchFixture(t, "api", "research", "work", "http://127.0.0.1:1")
+	assistantExternalEvidenceAdmit(t, f)
+	assistantExternalEvidenceApproved(t, f, "desk-search")
+	x := assistantExecutionOpen(t, f.s, f.e)
+	wire := runcontext.WireName("desk-search", assistantSearchTool)
+	claimedAtVerify := 0
+	found := false
+	for i := range x.Run.HostTools {
+		tool := &x.Run.HostTools[i]
+		if tool.Name != assistantSearchTool || tool.Source == nil {
+			continue
+		}
+		found = true
+		source := *tool.Source
+		verify := source.VerifyReceipt
+		source.VerifyReceipt = func(ctx context.Context, evidence runcontext.ReceiptEvidence) (bool, error) {
+			for _, d := range assistantExecutionRecord(t, f.e).Checkpoint.Durable.Dispatches {
+				if d.Kind == "host" && d.Tool == wire && d.State == "claimed" {
+					claimedAtVerify++
+				}
+			}
+			return verify(ctx, evidence)
+		}
+		tool.Source = &source
+	}
+	if !found {
+		t.Fatal("approved search source not offered")
+	}
+	requests := 0
+	x.Run.Model = func(context.Context, string, relay.Request) (*http.Response, error) {
+		requests++
+		if requests == 1 {
+			return assistantChildProbeReply([]struct {
+				name string
+				args json.RawMessage
+			}{{wire, json.RawMessage(`{"query":"public policy"}`)}}), nil
+		}
+		return assistantChildProbeReply(nil), nil
+	}
+	emit := x.Run.Emit
+	x.Run.Emit = func(event contract.RunEvent) {
+		if event.Error != nil {
+			t.Errorf("adapter failure: %s", assistantChatJSON(event.Error))
+		}
+		if emit != nil {
+			emit(event)
+		}
+	}
+	assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
+	if claimedAtVerify != 1 {
+		t.Fatal("the receipt was not checked while the claim was open", claimedAtVerify)
+	}
+	after := assistantExecutionRecord(t, f.e)
+	accepted := 0
+	for _, item := range after.Canonical.Events {
+		envelope, err := runcontext.ReadStoredRunEvent(item.Bytes)
+		assistantRunMust(t, err)
+		result := envelope.Event.ToolResult
+		if result != nil && result.Name == wire {
+			if result.IsError || result.Source == nil || result.Source.Receipt == nil {
+				t.Fatal("verified external read was withheld", result.Text)
+			}
+			accepted++
+		}
+	}
+	recorded := 0
+	for _, d := range after.Checkpoint.Durable.Dispatches {
+		if d.Kind == "host" && d.Tool == wire && d.State == "result" && d.Failure == nil {
+			recorded++
+		}
+	}
+	if accepted != 1 || recorded != 1 {
+		t.Fatal("verified read not recorded and accepted exactly once", accepted, recorded)
 	}
 }
