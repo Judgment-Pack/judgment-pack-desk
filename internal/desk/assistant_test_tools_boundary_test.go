@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 )
@@ -482,6 +483,15 @@ func TestAssistantTestHostEnabledCriticProposalCustody(t *testing.T) {
 	cp, err := runcontext.ReadExecution(value)
 	assistantRunMust(t, err)
 	assistantRunMust(t, e.Checkpoint(t.Context(), *cp))
+	// An execution owns one Runtime at a time. End the original invocation's
+	// Runtime, and wait for it to release that ownership, before the
+	// continuation (a copy of this execution) starts its own.
+	x.Close()
+	for deadline := time.Now().Add(5 * time.Second); e.runtimeOwner.Load() != nil; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("original Runtime kept its ownership after Close")
+		}
+	}
 	continued := copiedValue(e)
 	continued.input = &assistantChatCustody{}
 	continued.record = assistantExecutionRecord(t, e)
