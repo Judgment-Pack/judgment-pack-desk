@@ -228,7 +228,10 @@ func TestAssistantRetainedProductionNativeRuntimeApproval(t *testing.T) {
 				}
 			}
 			phases.mark("terminal-wait-start")
-			finalView := assistantProtocolWaitWithin(t, s, token, e.record.ID, "complete", 15*time.Second)
+			// Each decision's continuation re-reads and rewrites the canonical
+			// ledger, so the last one takes most of the old 15 s on an idle
+			// machine. Wait as the other actual canonical continuations do.
+			finalView := assistantProtocolWaitWithin(t, s, token, e.record.ID, "complete", 60*time.Second)
 			phases.mark("terminal-wait-return")
 			after := assistantExecutionRecord(t, e)
 			e.canonicalMu.Lock()
