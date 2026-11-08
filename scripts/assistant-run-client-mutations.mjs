@@ -19,8 +19,9 @@ try {
  for(const row of [null,...rows]){
   let replaced=false
   const outfile=join(tmp,'probe.mjs')
-  await build({entryPoints:[join(root,'scripts/assistant-run-client-mutation-probe.mjs')],outfile,bundle:true,platform:'node',format:'esm',logLevel:'silent',plugins:[{name:'isolated-transport-and-mutant',setup(b){
-   b.onLoad({filter:/web\/src\/files\/client\.ts$/},()=>({contents:'export const deskFetch=(...args)=>fetch(...args)',loader:'js'}))
+  await build({entryPoints:[join(root,'scripts/assistant-run-client-mutation-probe.mjs')],outfile,bundle:true,platform:'node',format:'esm',logLevel:'silent',inject:[join(root,'scripts/assistant-chat-projection-reference-locale.mjs')],define:{'import.meta.glob':'offlineLocaleCatalogues'},plugins:[{name:'isolated-transport-and-mutant',setup(b){
+   // The run modules reach other clients through shared readers; those clients' transport is never called here.
+   b.onLoad({filter:/web\/src\/files\/client\.ts$/},()=>({contents:"export const deskFetch=(...args)=>fetch(...args);export const chassisUrl=path=>path;export class FileRequestError extends Error{};export const answer=()=>{throw Error('isolated probe: no chassis answers')}",loader:'js'}))
    b.onLoad({filter:/web\/src\/mcp\/session\.ts$/},()=>({contents:"export const sessionBearer=async()=>'session';export const whenSessionEnds=()=>()=>{};export const discardBody=async answer=>{try{await answer.body?.cancel()}catch{}}",loader:'js'}))
    b.onLoad({filter:/web\/src\/assistant\/serverRuns\/(client|decode|stream)\.ts$/},async args=>{
     let contents=await readFile(args.path,'utf8')

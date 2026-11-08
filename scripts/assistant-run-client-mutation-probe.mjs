@@ -12,6 +12,8 @@ const ref={id:pending.id,owner:pending.owner,requestId:pending.requestId}
 assert.throws(()=>decodeSnapshot({...pending,owner:{...pending.owner,revision:'b'.repeat(64)}},ref),'source revision must remain exact')
 assert.throws(()=>decodeSnapshot({...pending,checkpoint:{}},ref),'checkpoint must use canonical reader')
 assert.throws(()=>decodeSnapshot({...pending,events:[{id:'e',event:{type:'invented'}}],cursor:'1:1'},ref),'unknown union discriminator')
+// The Agent's reader accepts message_progress; only the Desk's semantic list keeps it out of a run's events.
+assert.throws(()=>decodeSnapshot({...pending,events:[{id:'e',event:{type:'message_progress',version:1,text:'x'}}],cursor:'1:1'},ref),'unknown union discriminator')
 const observations=new RunObservations(ref,decodeSnapshot(pending,ref))
 observations.accept({kind:'event',cursor:'3:1',data:terminal.events[0]})
 observations.accept({kind:'event',cursor:'3:2',data:terminal.events[1]})
