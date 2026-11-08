@@ -17,7 +17,7 @@ import (
 const caseSensitiveFacts = `{"Fact":false,"fact":null,"zero":0,"number":50,"literal":"50","rows":[{"ID":0,"id":false}]}`
 
 func TestWorkspaceJSONDataAndControls(t *testing.T) {
-	valid := `{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"cases":[{"facts":` + caseSensitiveFacts + `}],"execution":{"operations":[{"args":` + caseSensitiveFacts + `,"result":{"structuredContent":` + caseSensitiveFacts + `}}],"context":{"entries":[{"value":` + caseSensitiveFacts + `}]},"custom":{"Fact":false,"fact":null},"Fact":false,"fact":null}}}}]}`
+	valid := `{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"cases":[{"facts":` + caseSensitiveFacts + `}],"execution":{"operations":[{"args":` + caseSensitiveFacts + `,"result":{"structuredContent":` + caseSensitiveFacts + `}}],"context":{"entries":[{"value":` + caseSensitiveFacts + `}]}}}}}]}`
 	if err := checkJSONMembers([]byte(valid), reflect.TypeOf(workspaceJSONHistory{})); err != nil {
 		t.Fatal("typed data refused", err)
 	}
@@ -45,6 +45,10 @@ func TestWorkspaceJSONDataAndControls(t *testing.T) {
 		`{"version":1,"chats":[{"id":"chat","policySources":[{"Version":1}]}]}`,
 		`{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"execution":{"Approval":{"state":"approved"}}}}}]}`,
 		`{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"execution":{"approval":{"State":"approved"}}}}}]}`,
+		// The Agent's checkpoint is a closed schema: members it does not name
+		// are not data, and keep the conservative case-folded check.
+		`{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"execution":{"custom":{"Fact":false,"fact":null}}}}}]}`,
+		`{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"execution":{"Fact":false,"fact":null}}}}]}`,
 		`{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"cases":[{"facts":{"x":0,"x":null}}]}}}]}`,
 		`{"version":1,"chats":[{"id":"chat","checkpoint":{"state":{"cases":[{"facts":{"x":"\ud800"}}]}}}]}`,
 	} {
