@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -125,8 +126,10 @@ func assistantSourceEvidence(t *testing.T, name string, value []byte) {
 
 // The actual Manager launches this test-owned peer. It requests the source,
 // learns a reference through list_context, then requests all three readers.
+// Like the Manager's own peer fixtures, it lists Desk's supplied model catalog
+// when asked for hidden models, which the Manager checks before a run.
 const assistantSourceNativePeer = `#!/usr/bin/env python3
-import json,re,sys
+import json,os,re,sys
 request={}; step=0; ref='unavailable-source-result'
 def write(v): print(json.dumps(v,separators=(',',':')),flush=True)
 def note(method,p): write({'method':method,'params':p})
@@ -147,6 +150,9 @@ for line in sys.stdin:
  if method=='initialize': reply({'userAgent':'jps_desk/0.157.1 (Linux)'})
  elif method=='initialized': pass
  elif method=='account/read': reply({'requiresOpenaiAuth':True,'account':{'type':'chatgpt','planType':'plus'}})
+ elif method=='model/list' and p.get('includeHidden'):
+  with open(os.path.join(os.environ['CODEX_HOME'],'model-catalog.json')) as f: catalog=json.load(f)
+  reply({'data':[{'model':m['slug']} for m in catalog['models']]})
  elif method=='model/list': reply({'data':[{'model':'fixture','displayName':'Fixture','defaultReasoningEffort':'medium','supportedReasoningEfforts':[{'reasoningEffort':'medium'}]}]})
  elif method=='thread/start': request=p; reply({'thread':{'id':'thread'},'model':p['model'],'modelProvider':'openai','approvalPolicy':'never','cwd':p['cwd']})
  elif method=='turn/start': reply({'turn':{'id':'turn'}}); call()
@@ -175,7 +181,9 @@ func assistantSourceContractNative(t *testing.T, observed *[][]byte) *adapter.Ag
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "source-peer")
 	assistantRunMust(t, os.WriteFile(binary, []byte(assistantSourceNativePeer), 0700))
-	m, err := codexbridge.NewManager(codexbridge.Options{Binary: binary, ProfileDir: filepath.Join(dir, "account"), ProjectDir: dir})
+	// A private Codex profile is never inside the project it serves, nor the
+	// project inside it: the project is a directory of its own.
+	m, err := codexbridge.NewManager(codexbridge.Options{Binary: binary, ProfileDir: filepath.Join(dir, "account"), ProjectDir: t.TempDir()})
 	assistantRunMust(t, err)
 	t.Cleanup(m.Close)
 	return &adapter.Agent{Model: "fixture", Effort: "medium", Run: func(ctx context.Context, request adapter.AgentRequest, callbacks adapter.AgentCallbacks) error {
@@ -298,8 +306,12 @@ func TestAssistantSourceContractFailedReceiptRetention(t *testing.T) {
 				chatBytes, _ := json.Marshal(chat.Entries())
 				assistantSourceEvidence(t, "chat-entries.json", chatBytes)
 				// Reload the exact stored checkpoint into a fresh chat with the same
-				// scope. The original canonical store supplies the durable binding;
-				// the published restore path checks Execution against its loaded head.
+				// scope through the original canonical store. The run is complete,
+				// and since Agent v0.13.2 (#328) a complete run-store head is not
+				// resumed: the reload is refused by name (RunComplete) before
+				// anything of the run is bound, so no reloaded context can carry
+				// the withheld result to a model. A reload that opens is checked
+				// for exposure as before.
 				reloadSession := runcontext.Session{Prompt: run.Prompt, Model: &runcontext.ModelSession{Family: "openai-compatible", Model: "fixture"}, HostTools: []runcontext.HostTool{tool}, Critic: "off", Context: &runcontext.Input{
 					Execution: cp,
 					Chat:      runcontext.NewChatContext(retained.Scope),
@@ -308,10 +320,18 @@ func TestAssistantSourceContractFailedReceiptRetention(t *testing.T) {
 				if engine == "native" {
 					reloadSession.Model, reloadSession.Agent = nil, &runcontext.AgentSession{Model: "fixture", Effort: "medium"}
 				}
+				var reloadSnapshot []byte
 				reloaded, err := runcontext.ContextualSession(ctx, reloadSession)
-				assistantRunMust(t, err)
-				defer reloaded.Context.Close()
-				reloadSnapshot, _ := json.Marshal(reloaded.Context.Ledger.Snapshot())
+				var complete *runcontext.RunComplete
+				if cp.Status == "complete" {
+					if !errors.As(err, &complete) {
+						t.Fatal("a reload of the complete run was not refused as RunComplete", err)
+					}
+				} else {
+					assistantRunMust(t, err)
+					defer reloaded.Context.Close()
+					reloadSnapshot, _ = json.Marshal(reloaded.Context.Ledger.Snapshot())
+				}
 				assistantSourceEvidence(t, "reloaded-context.json", reloadSnapshot)
 				nextRequestExposure := engine == "api" && len(requests) > 1 && bytes.Contains(requests[1], []byte(assistantSourceSentinel))
 				summary, _ := json.Marshal(map[string]any{"innerDurableSuccess": innerDurableSuccess, "sourceFailure": sourceFailure, "nextRequestBeforeReadersExposure": nextRequestExposure, "readerExposure": readerExposure, "retainedExposure": bytes.Contains(retainedBytes, []byte(assistantSourceSentinel)), "chatExposure": bytes.Contains(chatBytes, []byte(assistantSourceSentinel)), "reloadExposure": bytes.Contains(reloadSnapshot, []byte(assistantSourceSentinel)), "referenceLearnedByPeer": reference})
