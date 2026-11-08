@@ -116,12 +116,17 @@ func bytesEqualResearch(a, b inputResearchRun) bool {
 	return string(assistantChatJSON(a)) == string(assistantChatJSON(b))
 }
 func TestAssistantDialectResearchActualNativeParentChild(t *testing.T) {
-	s, token, e, _, trace := assistantCodexFixture(t, "delegate", "work")
+	// A canonical run, as every production executor admits; the approved
+	// research workflow is offered as its sourced tool, by its wire name.
+	s, token, e, _, trace := assistantCodexSourceFixture(t, "delegate", "work", testAIAlpha, `{"profileVersion":1,"codex":{"inherit":true},"projectInstructions":"HOST-INSTRUCTIONS-ONCE","context":{"version":1,"projectBrief":"execution-brief.md"}}`, func(s *Server, _ string, start assistantRunStart) assistantRunStart {
+		s.assistantRunExecutor = &assistantCanonicalCodexContinuationExecutor{s.assistantRunExecutor.(*assistantCodexExecutor)}
+		return start
+	})
 	saved, rr, run := assistantResearchSeed(t, s, token, e, true)
 	id := string(assistantChatJSON(map[string]string{"id": saved.Document.ID}))
 	peer := strings.Replace(assistantExecutionCodexPeer, "if mode=='delegate' and index==1:\n   tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})", `if mode=='delegate' and index==1: tool(offered('read_dialect_recipe'),json.loads(`+fmt.Sprintf("%q", id)+`),call='same-provider-call')
   elif mode=='delegate' and index==2: tool(offered('read_dialect_activity'),json.loads(`+fmt.Sprintf("%q", id)+`),call='same-provider-call')
-  elif mode=='delegate' and index==3: tool(offered('request_dialect_research'),json.loads(`+fmt.Sprintf("%q", assistantResearchArgs(saved))+`),call='same-provider-call')`, 1)
+  elif mode=='delegate' and index==3: tool(offered('`+runcontext.WireName("desk-research-workflow", assistantResearchTool)+`'),json.loads(`+fmt.Sprintf("%q", assistantResearchArgs(saved))+`),call='same-provider-call')`, 1)
 	peer = strings.Replace(peer, "if mode=='duplicate': tool(offered('get_schema'),{},rpc='rpc-two')", `if mode=='delegate' and index==1: tool(offered('delegate_tasks'),{'tasks':[{'title':'Read activity','objective':'Read explicit activity only.','profile':'review'}]},call='delegate',rpc='rpc-delegate')
   elif mode=='duplicate': tool(offered('get_schema'),{},rpc='rpc-two')`, 1)
 	assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(trace), "peer.py"), []byte(peer), 0600))
