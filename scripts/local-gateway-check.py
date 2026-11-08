@@ -22,6 +22,9 @@ TOKEN = 'local-gateway-isolated-test'
 # project: a second Desk on an installation another Desk holds exits with these
 # words. The running Desk opens other projects as named desks.
 ALREADY_OPEN = 'Another Desk is already open for this installation. Open this project from that Desk, or close it before starting Desk again.'
+# That rule is the storage line's (ADR-0015), off by default in v0.14.0: with it
+# off, as in v0.13.2, a second Desk starts beside the first on the installation.
+STORAGE_LINE = os.environ.get('JPACK_DESK_STORAGE_LINE') == 'on'
 
 def request(url, body=None, method=None, headers=None):
     encoded = None if body is None else json.dumps(body).encode()
@@ -127,11 +130,20 @@ def main():
             seed = config / 'jpack-desk/secrets/local-gateway.seed'
             assert seed.stat().st_mode & 0o777 == 0o600
             assert 'seed' not in json.dumps(answer)
-            refused(project)
-            refused(other_project)
-            # The refused starts changed nothing: the running Desk keeps its gateway.
-            held = request(desk + '/api/desk-config')['localGateway']
-            assert held['status'] == 'ready' and held['gateway']['url'] == gateway['url'] and held['gateway']['signer'] == gateway['signer'], held
+            concurrent, concurrent_desk = None, None
+            if STORAGE_LINE:
+                refused(project)
+                refused(other_project)
+                # The refused starts changed nothing: the running Desk keeps its gateway.
+                held = request(desk + '/api/desk-config')['localGateway']
+                assert held['status'] == 'ready' and held['gateway']['url'] == gateway['url'] and held['gateway']['signer'] == gateway['signer'], held
+            else:
+                # Two Desks on one installation, as in v0.13.2: the second has its own
+                # gateway, signed with the installation's one seed.
+                concurrent, concurrent_desk, beside = start(other_project)
+                assert beside['localGateway']['gateway']['signer'] == gateway['signer']
+                assert beside['localGateway']['gateway']['url'] != gateway['url']
+                assert request(concurrent_desk + '/api/connections/status', {})['state'] == 'setup-required'
             # A named desk in the running Desk has its own gateway and connection
             # companion, signed with the installation's one seed.
             named, named_url = None, None
@@ -302,6 +314,10 @@ def main():
             wait_for(lambda: closed(gateway['url']))
             if named_url:
                 wait_for(lambda: closed(named_url))
+            if concurrent:
+                # Stopping one Desk leaves the other's gateway running.
+                assert request(concurrent_desk + '/api/desk-config')['localGateway']['status'] == 'ready'
+                concurrent.terminate(); concurrent.wait(timeout=12)
             # With the first Desk closed, Desk starts again on the installation
             # and reuses the signer seed it kept.
             second, other_desk, other = start()
@@ -331,7 +347,7 @@ def main():
             # Invalid configuration must not get a managed fallback.
             config_path.write_text('{broken')
             assert 'localGateway' not in request(desk + '/api/desk-config')
-            print('PASS: Drive/Gmail isolated status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, one Desk per installation, ' + ('named desk companions, ' if named else '') + 'signed extraction, document processing settings, credential custody and restart, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
+            print('PASS: Drive/Gmail isolated status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, ' + ('one Desk per installation, ' if STORAGE_LINE else 'two Desks on one installation, ') + ('named desk companions, ' if named else '') + 'signed extraction, document processing settings, credential custody and restart, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
         finally:
             for proc in processes:
                 if proc.poll() is None: proc.terminate()
