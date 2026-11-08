@@ -171,8 +171,12 @@ func assistantResearchUsed(t *testing.T, s *Server, rr *os.Root, run inputResear
 	return got
 }
 func TestAssistantDialectResearchRequestAndReplay(t *testing.T) {
-	for _, mode := range []string{"review", "grant", "manual-first", "other-host-first"} {
+	// manual-first and other-host-first change the recipe after the earlier
+	// same-turn admission; the -current modes leave it as it was read.
+	for _, mode := range []string{"review", "grant", "manual-first", "other-host-first", "manual-first-current", "other-host-first-current"} {
 		t.Run(mode, func(t *testing.T) {
+			current := strings.HasSuffix(mode, "-current")
+			mode := strings.TrimSuffix(mode, "-current")
 			s, token, e := assistantResearchSourceBrowserFixture(t, "http://127.0.0.1:1")
 			saved, rr, run := assistantResearchSeed(t, s, token, e, mode != "review")
 			x := assistantExecutionOpen(t, s, e)
@@ -187,11 +191,30 @@ func TestAssistantDialectResearchRequestAndReplay(t *testing.T) {
 				if receipt.Status != "started" {
 					t.Fatal("earlier same-turn request not admitted")
 				}
-				// The same-turn historical receipt is returned without another
-				// admission. The recipe is left as it was read: the research
-				// workflow's approval policy refuses a call whose recipe read is no
-				// longer current, before the historical receipt is consulted, so a
-				// changed recipe never reaches the owner on this path.
+				if !current {
+					// The research workflow's approval policy refuses a call whose
+					// recipe read is no longer current, before it consults the
+					// same-turn historical receipt: nothing is admitted again and
+					// the earlier admission keeps its own provenance.
+					before, err := s.researchJournal(rr, run.ID).Read(t.Context())
+					assistantRunMust(t, err)
+					doc := saved.Document
+					doc.Name = "Changed after original admission"
+					_, err = s.preparationRepository().CompareAndSwap(t.Context(), doc, saved.SHA256)
+					assistantRunMust(t, err)
+					_, err = assistantCanonicalHostCall(e, x, t.Context(), "request", assistantResearchTool, assistantResearchArgs(saved), true)
+					if err == nil || !strings.Contains(err.Error(), "approval policy refused") {
+						t.Fatal("a stale recipe read was not refused by the workflow's policy", err)
+					}
+					after, err := s.researchJournal(rr, run.ID).Read(t.Context())
+					assistantRunMust(t, err)
+					if !bytes.Equal(assistantChatJSON(before), assistantChatJSON(after)) || len(assistantExecutionRecord(t, e).DomainOutputs) != 0 {
+						t.Fatal("refused stale call changed the owner or retained an output")
+					}
+					return
+				}
+				// With the recipe as it was read, the same-turn historical receipt
+				// is returned without another admission.
 			}
 			r := assistantResearchInvoke(t, e, x, t.Context(), "request", assistantResearchTool, assistantResearchArgs(saved))
 			if r.Err() {
