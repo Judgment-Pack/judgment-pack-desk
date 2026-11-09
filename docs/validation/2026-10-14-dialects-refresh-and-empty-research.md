@@ -29,9 +29,9 @@ The live recipe, records, research journals and chat are preserved. This change 
 
 ## Completed checks and installation
 
-- 28 frontend test files: 164 passed (`/tmp/dialects-recovery-tests-final.log`).
-- Targeted server tests passed (`/tmp/dialects-recovery-server.log`).
-- Browser fixture passed all six checks (`/tmp/dialects-recovery-browser2.log`).
+- 28 frontend test files: 164 passed (`<scratch>/dialects-recovery-tests-final.log`).
+- Targeted server tests passed (`<scratch>/dialects-recovery-server.log`).
+- Browser fixture passed all six checks (`<scratch>/dialects-recovery-browser2.log`).
 - TypeScript, production frontend build, Go build and locale extraction passed.
 - Installed manifest: `fcba4cb734290f3aa541e35e93917741fb20fd61fe388db65b930ec20e731b50`.
 - Restarted only after active chats/research/jobs were idle. HTTP 200 serves `/assets/index-DfICQOQ7.js`.

@@ -69,6 +69,20 @@ stop preparation. Unfinished temporary files are removed. Cached executables
 are reverified before launch; a damaged regular file is repaired only by another
 explicit Connect action. Unsafe symlink/hardlink/permission states refuse.
 
+Preparation needs approximately 393 MB free for the pinned archive and extracted
+executable together (about 108 MB + 285 MB, in decimal units), based on the
+existing observed artifact sizes, not a measured free-space benchmark. Allow
+additional filesystem overhead. After verified preparation, including a verified
+cache hit, Desk removes only superseded, recognizable managed executable files
+from its owned runtime root. Read-only checks do not prune. The profile lease
+and operation mutex exclude another installer or an active run; failed
+preparation retains usable published executables. Symlinks, hardlinks,
+directories and unrelated cache names are left alone. A retained ENOSPC cause
+is reported as a full disk, with guidance to free space on Desk's configuration
+drive, in setup/status and run failures. Account HTTP routes use the stable
+`storage-full` code with status 507; the native run boundaries retain the existing
+typed `storage` failure and bounded disk guidance.
+
 Installation owners may still set `--codex /absolute/path/to/codex` for an
 explicit trusted executable, or `--codex off` to disable subscription access.
 These are advanced overrides, not normal UI steps. The native protocol version
@@ -250,10 +264,11 @@ it and leaving the account files untouched; a configuration that differs in any
 other way is refused as before. Only Connect prepares a runtime, so a signed-in
 Desk then shows its account as not connected until the owner presses Connect
 once, which downloads `0.157.1` and returns to connected without a browser
-sign-in. Preparation needs about 393 MB free for the archive and the
-executable together, and the `0.145.0` executable (311 MB) stays in the cache,
-because staging cleanup never removes a published version; a full disk is
-reported as a preparation failure, which the UI attributes to the connection.
+sign-in. Preparation needs approximately 393 MB free for the archive and
+executable together, as described above. After verification, preparation removes
+superseded managed executables such as `codex-0.145.0` (previously observed at
+311 MB). A full disk is reported as a disk problem rather than a connection
+failure.
 Whether `0.157.1` accepts a sign-in made with `0.145.0` was not tested, since
 no real sign-in was performed. To return to the earlier Desk, delete the three
 lines this Desk added to `config.toml`: `model_catalog_json`, `view_image =
@@ -263,12 +278,19 @@ and ignores the catalog file.
 
 `0.157.1` also changes account reads. For a signed-in account that carries an
 account id, `account/read` asks the ChatGPT backend for the account's
-workspace before answering, under a 15-second limit that matches the bridge's
-per-call deadline, and only a successful answer is kept for the process's
-life. Offline, every status, model listing and run therefore waits about 15
-seconds and fails with the runtime-unavailable message rather than a network
-one; online latency was not measured, since no real sign-in was performed.
-`0.145.0` answered from the local file.
+workspace before answering, under a 15-second backend limit, and only a
+successful answer is kept for the process's life. Desk allows `account/read`
+20 seconds so the backend can finish its own bounded lookup; other protocol
+calls retain their 15-second deadline. An account-read deadline or backend
+failure becomes the bounded account lookup/network error: "Desk could not reach
+ChatGPT to check the account." This applies to status, model listing and run
+preflight; caller cancellation stays distinct, and malformed protocol responses
+remain runtime-unavailable errors. Account HTTP routes return
+`account-lookup-failed` with status 408, separately from `operation-canceled`;
+the run boundaries retain the existing typed `connection-lost` failure with
+account lookup guidance. No model run begins when account lookup
+fails. Online lookup latency was not measured, since no real sign-in was
+performed. `0.145.0` answered from the local file.
 
 `0.157.1` registers no skills utility and no `update_plan` without an
 environment, where `0.145.0` registered all three; the probe allows none.

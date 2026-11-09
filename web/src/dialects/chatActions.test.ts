@@ -111,3 +111,27 @@ it('offers selected reprocessing as a review-only action in either chat surface'
  expect(vi.mocked(dialectAPI).mock.calls.every(([,method])=>!method||method==='GET')).toBe(true)
  await expect(call('propose_dialect_action',{id:inputId,revision,kind:'reprocess',recordIds:['row_'+'d'.repeat(64)]})).rejects.toThrow('No records were skipped')
 })
+
+
+it('projects retained null cells as legacy blanks without changing raw records or record bounds',async()=>{
+ const current=structuredClone(saved),row=current.document.records[0]
+ row.values={nullCell:null,blankCell:'',textCell:'x'.repeat(501),...Object.fromEntries(Array.from({length:28},(_,i)=>['extra'+i,'kept']))}
+ const before=JSON.stringify(current)
+ vi.mocked(dialectAPI).mockResolvedValue(current)
+ const body=JSON.parse((await call('read_dialect_records',{id:inputId,limit:1}) as any).content[0].text)
+ expect(body.items[0].values.nullCell).toEqual({text:'',truncated:false})
+ expect(body.items[0].values.blankCell).toEqual({text:'',truncated:false})
+ expect(body.items[0].values.textCell).toEqual({text:'x'.repeat(500),truncated:true})
+ expect(Object.hasOwn(body.items[0].values,'absentCell')).toBe(false)
+ expect(Object.keys(body.items[0].values)).toHaveLength(30)
+ expect(Object.hasOwn(body.items[0].values,'extra27')).toBe(false)
+ expect(body).toMatchObject({total:1,nextOffset:null})
+ expect(JSON.stringify(current)).toBe(before)
+ expect(row.values.nullCell).toBeNull()
+ expect(Object.hasOwn(row.values,'absentCell')).toBe(false)
+ expect(vi.mocked(dialectAPI).mock.calls).toEqual([['/'+inputId]])
+})
+it('declares the owner taxonomy of each server-side record tool',()=>{
+ const owned=Object.fromEntries(tools.filter(t=>t.name!=='request_dialect_research').map(t=>[t.name,t.taxonomy]))
+ expect(owned).toEqual({read_dialect_records:{operation:'read',effect:'read'},read_dialect_activity:{operation:'read',effect:'read'},propose_dialect_action:{operation:'propose',effect:'propose'}})
+})

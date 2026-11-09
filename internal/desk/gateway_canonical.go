@@ -16,7 +16,7 @@ import (
 // Integer/scalar/code-point profile from Gateway SPEC.md/canon corpus. This is
 // deliberately not RFC8785 or encoding/json's HTML-escaped serialization.
 func gatewayCanonicalJSON(_ context.Context, raw []byte) ([]byte, error) {
-	if !utf8.Valid(raw) || !json.Valid(raw) || jsonscalar.ValidateEscapes(raw) != nil || rejectDuplicateMembers(raw) != nil {
+	if !utf8.Valid(raw) || !json.Valid(raw) || jsonscalar.ValidateEscapes(raw) != nil || checkJSONMembers(raw, opaqueJSONMembers) != nil {
 		return nil, errors.New("invalid canonical JSON")
 	}
 	var value any

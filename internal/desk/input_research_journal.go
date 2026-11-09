@@ -17,10 +17,12 @@ const inputResearchRecordLimit = 16 << 20
 var inputResearchID = regexp.MustCompile(`^research_[a-f0-9]{32}$`)
 
 type inputResearchAttempt struct {
-	Failure         *aifailure.Failure      `json:"failure,omitempty"`
-	AppliedSequence int                     `json:"appliedSequence,omitempty"`
-	TaskID          string                  `json:"taskId,omitempty"`
-	RecordResults   []researchRecordOutcome `json:"recordResults,omitempty"`
+	Background      *backgroundModelReceipt         `json:"background,omitempty"`
+	RetainedProof   *portableResearchProofReference `json:"retainedProof,omitempty"`
+	Failure         *aifailure.Failure              `json:"failure,omitempty"`
+	AppliedSequence int                             `json:"appliedSequence,omitempty"`
+	TaskID          string                          `json:"taskId,omitempty"`
+	RecordResults   []researchRecordOutcome         `json:"recordResults,omitempty"`
 
 	ReservedBytes      int             `json:"reservedBytes,omitempty"`
 	ActionProblem      string          `json:"actionProblem,omitempty"`
@@ -100,7 +102,7 @@ type inputResearchRun struct {
 }
 
 func (s *Server) inputResearchRoot(create bool) (*os.Root, error) {
-	root, made, e := openOwnFolder(s.root, strings.Split(inputResearchDirectory, "/"), create, "input research")
+	root, made, e := openOwnFolderBy(s.root, strings.Split(inputResearchDirectory, "/"), create, "input research", s.creation(nil))
 	if e == nil && made {
 		e = writePrivateData(root, ".gitignore", []byte("*\n"))
 		if e != nil {
@@ -110,11 +112,45 @@ func (s *Server) inputResearchRoot(create bool) (*os.Root, error) {
 	return root, e
 }
 func openInputResearch(root *os.Root, id string, create bool) (*os.Root, error) {
+	return openInputResearchBy(root, id, create, folderCreation{})
+}
+
+// openInputResearchBy is openInputResearch with a missing run folder made the
+// way how says.
+func openInputResearchBy(root *os.Root, id string, create bool, how folderCreation) (*os.Root, error) {
 	if !inputResearchID.MatchString(id) {
 		return nil, errors.New("Invalid research ID.")
 	}
-	r, _, e := openOwnFolder(root, []string{id}, create, "input research run")
+	r, _, e := openOwnFolderBy(root, []string{id}, create, "input research run", how)
 	return r, e
+}
+
+// lockResearchAdmission takes the research admission on root, the research
+// folder: the exclusive lock on root's folder, not waited for. It answers the
+// lock's descriptor, the caller's to close, and how folders are made in root
+// while it is held. With the storage line on, the admission is their creator
+// window, borrowed: asking for the window a second time would be refused by
+// the caller's own hold, so no run could ever be started. The lease is never
+// closed; closing the admission releases it. Off, folders are made as v0.13.2
+// made them.
+func (s *Server) lockResearchAdmission(root *os.Root) (*os.File, folderCreation, error) {
+	admission, err := root.Open(".")
+	if err != nil {
+		return nil, folderCreation{}, err
+	}
+	if err = lockPrivateData(admission, true); err != nil {
+		admission.Close()
+		return nil, folderCreation{}, errors.New("Another research change is being saved. Try again after it finishes.")
+	}
+	if s.deskOwner().storageLineOff {
+		return admission, s.creation(nil), nil
+	}
+	lease, err := storageCreatorLockedLease(root, admission)
+	if err != nil {
+		admission.Close()
+		return nil, folderCreation{}, err
+	}
+	return admission, s.creation(lease), nil
 }
 
 // beginResearchAttempt must be committed before invoking a provider. A matching
@@ -201,7 +237,8 @@ func refuseResearchAttempt(run *inputResearchRun, id string, result json.RawMess
 		if a.ID != id {
 			continue
 		}
-		if a.State != "started" || a.Kind == "model" || len(result) == 0 || code == "" || problem == "" {
+		external := run.Portable != nil && a.RetainedProof != nil
+		if a.State != "started" || !external && (a.Kind == "model" || len(result) == 0) || code == "" || problem == "" {
 			return errors.New("Research attempt cannot be refused.")
 		}
 		if len(result) > 2<<20 {

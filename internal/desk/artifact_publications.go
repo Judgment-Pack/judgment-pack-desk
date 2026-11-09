@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
 
 const publicationDirectory = ".desk-private/artifact-publications"
@@ -74,9 +76,16 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return publicationLedger{Version: 1, Items: []artifactPublication{}}, nil
 	}
-	var ledger publicationLedger
 	if err != nil {
-		return ledger, err
+		return publicationLedger{}, err
+	}
+	return decodePublicationLedger(raw)
+}
+
+func decodePublicationLedger(raw []byte) (publicationLedger, error) {
+	var ledger publicationLedger
+	if len(raw) > publicationLedgerLimit {
+		return ledger, errors.New("Artifact version history exceeds its storage limit.")
 	}
 	if decodeDataJSON(raw, &ledger) != nil || ledger.Version != 1 || len(ledger.Items) > 4096 {
 		return ledger, errors.New("Artifact version history is unreadable.")
@@ -106,7 +115,7 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 			return ledger, errors.New("Artifact publication receipt is inconsistent.")
 		}
 	}
-	if err = admitPublication(ledger, artifactPublication{}); err != nil {
+	if err := admitPublication(ledger, artifactPublication{}); err != nil {
 		return ledger, err
 	}
 	return ledger, nil
@@ -155,8 +164,14 @@ func (s *Server) retainPublicationSnapshot(ctx context.Context, snap *reviewSnap
 
 // Called only while holding the cross-process project lock. Lock ordering is
 // project -> publication ledger -> retained artifacts, for every writer.
-func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot) (*publicationTransaction, error) {
-	p, err := s.openPublicationTransaction(ctx)
+// projectLease is that held lock: a folder this makes directly in the project
+// borrows it, because a second exclusive try on the same folder is refused by
+// the lease this transaction already holds.
+func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot, projectLease *storageCreatorLease) (*publicationTransaction, error) {
+	if projectLease == nil {
+		return nil, storagebudget.ErrAuthority
+	}
+	p, err := s.openPublicationTransactionWithCreator(ctx, projectLease)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +271,7 @@ func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot) (*p
 	}
 	// These verified digest-addressed copies make the public lock recoverable
 	// even if the process stops before its history receipt is committed.
-	if err = s.storeReviewedCopies(snap); err != nil {
+	if err = s.storeReviewedCopiesWithCreator(snap, projectLease); err != nil {
 		return nil, err
 	}
 	proposed := p.withCandidate()
@@ -466,7 +481,13 @@ func (s *Server) handleArtifactVersions(w http.ResponseWriter, r *http.Request) 
 
 // Lock ordering for all writers: project/preparation -> ledger -> retained artifacts.
 func (s *Server) openPublicationTransaction(ctx context.Context) (*publicationTransaction, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions")
+	return s.openPublicationTransactionWithCreator(ctx, nil)
+}
+
+// original is the caller's held project lease, or nil where the caller holds
+// none and the folder's own creator lock is taken and released here.
+func (s *Server) openPublicationTransactionWithCreator(ctx context.Context, original *storageCreatorLease) (*publicationTransaction, error) {
+	root, made, err := openOwnFolderBy(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions", s.creation(original))
 	if err != nil {
 		return nil, err
 	}
@@ -496,4 +517,40 @@ func (s *Server) openPublicationTransaction(ctx context.Context) (*publicationTr
 	}
 	failed = false
 	return p, nil
+}
+
+func retentionPublicationReferences(raw []byte, ledger publicationLedger) storageRetentionSource {
+	out := storageRetentionUnknown("publication-history", "publications", raw, "opaque-dialect-publication")
+	complete := uniqueJSON(raw) && storageRetentionMembers(raw, "version", "items", "receipts")
+	var original struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if json.Unmarshal(raw, &original) != nil || len(original.Items) != len(ledger.Items) {
+		return out
+	}
+	add := func(ref *retainedArtifactRef) {
+		if ref != nil {
+			out.add(storageRetentionReference{"retained", ref.SHA256, strconv.Itoa(ref.Bytes)})
+		}
+	}
+	for i, p := range ledger.Items {
+		if p.Dialect != nil || !storageRetentionMembers(original.Items[i], "id", "at", "imported", "config", "dialect", "documents", "review", "reviews") {
+			complete = false
+		}
+		add(p.Config)
+		add(p.Review)
+		for _, r := range p.Reviews {
+			v := r
+			add(&v)
+		}
+		for _, d := range p.Documents {
+			v := d.Content
+			add(&v)
+		}
+	}
+	out.Complete = complete && len(out.Reasons) == 1
+	if out.Complete {
+		out.Reasons = []string{}
+	}
+	return out
 }

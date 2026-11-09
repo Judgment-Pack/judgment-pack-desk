@@ -1,0 +1,799 @@
+package desk
+
+// Terminal chat projection is a private host workflow, not a JSON patch API.
+// A prepared selected-chat copy is immutable; pending execution stays in its ledger.
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/jsonscalar"
+)
+
+var errAssistantChatProjectionUnsupported = errors.New("This response contains data not supported by chat projection yet. Its run is retained.")
+var errAssistantChatProjectionQuestion = fmt.Errorf("%w: unresolved question", errAssistantChatProjectionUnsupported)
+
+type assistantChatProjection struct {
+	Version      int    `json:"version"`
+	SourceDigest string `json:"sourceDigest"`
+	EventDigest  string `json:"eventDigest"`
+	Output       []byte `json:"output"`
+	Digest       string `json:"digest"`
+	ResponseID   string `json:"responseId"`
+	Acknowledged bool   `json:"acknowledged"`
+}
+type assistantChatProjectionView struct {
+	ResponseID   string `json:"responseId"`
+	Digest       string `json:"digest"`
+	Acknowledged bool   `json:"acknowledged"`
+}
+
+func assistantChatProjectionPublic(p *assistantChatProjection) *assistantChatProjectionView {
+	if p == nil {
+		return nil
+	}
+	return &assistantChatProjectionView{ResponseID: p.ResponseID, Digest: p.Digest, Acknowledged: p.Acknowledged}
+}
+
+// Lease/storage recovery already maps running checkpoint operations to
+// interrupted. Normalize that display-only transition before hashing so a
+// prepared terminal output survives recovery without rewriting its exact bytes.
+// Copy the slice: calculating a projection must never mutate the original journal.
+func assistantChatProjectionCheckpoint(run assistantRunRecord) *contract.Checkpoint {
+	if run.Checkpoint == nil {
+		return nil
+	}
+	cp := *run.Checkpoint
+	if run.Checkpoint.Operations != nil {
+		cp.Operations = append([]contract.CheckpointOperation{}, run.Checkpoint.Operations...)
+	}
+	for i := range cp.Operations {
+		if cp.Operations[i].Status == "running" {
+			cp.Operations[i].Status = "interrupted"
+		}
+	}
+	return &cp
+}
+
+type assistantChatDigestBase struct {
+	State      string
+	Checkpoint any
+	Events     []assistantRunEvent
+	Outputs    []assistantDomainOutput
+}
+
+func assistantChatEventDigest(run assistantRunRecord) string {
+	return digestOf(assistantChatEventDigestPayload(run))
+}
+func assistantChatEventDigestPayload(run assistantRunRecord) []byte {
+	// Construct the shared fields once: domain output custody is covered by the
+	// same digest boundary both before and after a continuation.
+	base := assistantChatDigestBase{run.State, assistantChatProjectionCheckpoint(run), run.Events, run.DomainOutputs}
+	if len(run.AnswerHistory) > 0 {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			AnswerHistory []assistantRunAnswerOrigin
+			Continuations []assistantRunContinuationReceipt
+		}{base, run.AnswerHistory, assistantRunContinuations(run)})
+		return raw
+	}
+	if run.Creation != nil {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			Creation *assistantCreationReceipt
+		}{base, run.Creation})
+		return raw
+	}
+	if run.SavedPack != nil {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			SavedPack     *assistantSavedPackBasis
+			Continuations []assistantRunContinuationReceipt
+		}{base, run.SavedPack, assistantRunContinuations(run)})
+		return raw
+	}
+	if continuations := assistantRunContinuations(run); len(continuations) > 0 {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			Continuations []assistantRunContinuationReceipt
+		}{base, continuations})
+		return raw
+	}
+	// Preserve prepared receipts produced before the first domain variant existed.
+	if len(run.DomainOutputs) == 0 {
+		raw, _ := json.Marshal(struct {
+			State      string
+			Checkpoint any
+			Events     []assistantRunEvent
+		}{base.State, base.Checkpoint, base.Events})
+		return raw
+	}
+	raw, _ := json.Marshal(base)
+	return raw
+}
+
+func validateAssistantChatProjection(run assistantRunRecord) error {
+	if run.ProjectionIssue != "" && run.ProjectionIssue != "proposal-target" && run.ProjectionIssue != "pending-question" && run.ProjectionIssue != "saved-chat-validation" && run.ProjectionIssue != "unsupported-unicode" {
+		return errAssistantRunInvalid
+	}
+	p := run.ChatProjection
+	if p == nil {
+		return nil
+	}
+	if p.Version != 1 || p.SourceDigest != run.Binding.Owner.Revision || p.EventDigest != assistantChatEventDigest(run) || p.ResponseID != assistantChatResponseID(run.ID) || !assistantRunDigest(p.Digest) || len(p.Output) == 0 || len(p.Output) > maxConversationBytes || digestOf(p.Output) != p.Digest || !assistantRunTerminal(run.State) || run.ProjectionIssue != "" {
+		return errAssistantRunInvalid
+	}
+	chat, err := assistantChatObject(p.Output)
+	if err != nil {
+		return err
+	}
+	var id string
+	_ = json.Unmarshal(chat["id"], &id)
+	if id != run.Binding.Owner.ID {
+		return errAssistantRunScope
+	}
+	return nil
+}
+
+// Validate the selected output before it can become a prepared receipt. Raw
+// checkpoint arguments/results need scalar-valid JSON. Candidate text is itself
+// serialized JSON inside a JSON string, so check that second layer explicitly.
+// Readers and original strings are unchanged; unsupported data stays in the run.
+func assistantChatProjectionUnicode(output []byte) bool {
+	if !validUTF8(output) || jsonscalar.ValidateEscapes(output) != nil {
+		return false
+	}
+	chat, err := assistantChatObject(output)
+	if err != nil {
+		return false
+	}
+	checkpoint, err := assistantChatObject(chat["checkpoint"])
+	if err != nil {
+		return false
+	}
+	state, err := assistantChatObject(checkpoint["state"])
+	if err != nil {
+		return false
+	}
+	candidates, err := assistantChatArray(state["candidates"])
+	if err != nil {
+		return false
+	}
+	for _, raw := range candidates {
+		candidate, err := assistantChatObject(raw)
+		if err != nil {
+			return false
+		}
+		var text string
+		if json.Unmarshal(candidate["text"], &text) != nil || !validUTF8([]byte(text)) || !json.Valid([]byte(text)) || jsonscalar.ValidateEscapes([]byte(text)) != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// Write RawMessage values directly: json.Marshal would compact unrelated bytes.
+func assistantChatEncodeObject(fields map[string]json.RawMessage) []byte {
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var out bytes.Buffer
+	out.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		name, _ := json.Marshal(k)
+		out.Write(name)
+		out.WriteByte(':')
+		out.Write(fields[k])
+	}
+	out.WriteByte('}')
+	return out.Bytes()
+}
+func assistantChatEncodeArray(items []json.RawMessage) []byte {
+	var out bytes.Buffer
+	out.WriteByte('[')
+	for i, item := range items {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		out.Write(item)
+	}
+	out.WriteByte(']')
+	return out.Bytes()
+}
+func assistantChatJSON(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
+func assistantChatObject(raw []byte) (map[string]json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if !validUTF8(raw) || !uniqueJSON(raw) || json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return nil, errAssistantRunInvalid
+	}
+	return fields, nil
+}
+func assistantChatArray(raw []byte) ([]json.RawMessage, error) {
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) != nil || items == nil {
+		return nil, errAssistantRunInvalid
+	}
+	return items, nil
+}
+func assistantChatRows(raw []byte) (map[string]json.RawMessage, []json.RawMessage, error) {
+	fields, err := assistantChatObject(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	var version int
+	if json.Unmarshal(fields["version"], &version) != nil || version != 1 {
+		return nil, nil, errAssistantRunInvalid
+	}
+	rows, err := assistantChatArray(fields["chats"])
+	if err != nil || len(rows) > 256 {
+		return nil, nil, errAssistantRunInvalid
+	}
+	ids := map[string]bool{}
+	for _, raw := range rows {
+		chat, e := assistantChatObject(raw)
+		if e != nil {
+			return nil, nil, e
+		}
+		var id string
+		_ = json.Unmarshal(chat["id"], &id)
+		if !researchChatID.MatchString(id) || ids[id] {
+			return nil, nil, errAssistantRunInvalid
+		}
+		ids[id] = true
+	}
+	return fields, rows, nil
+}
+func assistantChatSelected(rows []json.RawMessage, id string) (int, error) {
+	for i, raw := range rows {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields)
+		var held string
+		_ = json.Unmarshal(fields["id"], &held)
+		if held == id {
+			return i, nil
+		}
+	}
+	return -1, errAssistantRunNotFound
+}
+func assistantChatRequest(raw []byte, requestID, digest string) bool {
+	chat, e := assistantChatObject(raw)
+	if e != nil {
+		return false
+	}
+	checkpoint, e := assistantChatObject(chat["checkpoint"])
+	if e != nil {
+		return false
+	}
+	state, e := assistantChatObject(checkpoint["state"])
+	if e != nil {
+		return false
+	}
+	turns, e := assistantChatArray(state["turns"])
+	if e != nil {
+		return false
+	}
+	seen := map[string]bool{}
+	found := false
+	for index, raw := range turns {
+		turn, e := assistantChatObject(raw)
+		if e != nil {
+			return false
+		}
+		var id, role string
+		_ = json.Unmarshal(assistantChatTurnID(turn, index), &id)
+		_ = json.Unmarshal(turn["role"], &role)
+		if !assistantChatProjectionID(id) || seen[id] {
+			return false
+		}
+		seen[id] = true
+		if id == requestID {
+			found = turn["id"] != nil && role == "user" && digestOf(raw) == digest
+		}
+	}
+	return found
+}
+
+// Historical messages can predate persisted IDs. Use the browser reader's
+// stable association alias without changing the original retained row bytes.
+func assistantChatTurnID(turn map[string]json.RawMessage, index int) []byte {
+	if turn["id"] != nil {
+		return turn["id"]
+	}
+	return assistantChatJSON("legacy-turn-" + strconv.Itoa(index))
+}
+func assistantChatResponseID(runID string) string {
+	return "response-" + digestOf([]byte(runID))[:32]
+}
+func assistantChatProjectionID(id string) bool {
+	if len(id) < 1 || len(id) > 100 {
+		return false
+	}
+	for _, r := range id {
+		if r != '-' && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// Existing strings/raw turn and candidate slices are retained unchanged. New
+// canonical create proposals use the Go package's documented sorted-map form;
+// this is not a reconstruction of original model JSON bytes (#537).
+func compileAssistantChatProjection(source []byte, run assistantRunRecord, at string) ([]byte, error) {
+	chat, err := assistantChatObject(source)
+	if err != nil {
+		return nil, err
+	}
+	cp, err := assistantChatObject(chat["checkpoint"])
+	if err != nil {
+		return nil, err
+	}
+	state, err := assistantChatObject(cp["state"])
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range map[string]any{"brief": "", "seedUrls": []string{}, "turns": []any{}, "questions": []any{}, "candidates": []any{}, "cases": []any{}, "expectationIssues": []any{}, "unknowns": []string{}, "sessions": []string{}, "revisionsUsed": 0, "responses": []any{}} {
+		if state[key] == nil {
+			state[key] = assistantChatJSON(value)
+		}
+	}
+	turns, err := assistantChatArray(state["turns"])
+	if err != nil {
+		return nil, err
+	}
+	candidates, err := assistantChatArray(state["candidates"])
+	if err != nil {
+		return nil, err
+	}
+	responses, err := assistantChatArray(state["responses"])
+	if err != nil {
+		return nil, err
+	}
+	var creationAction *assistantCreationAction
+	for _, raw := range turns {
+		turn, err := assistantTestObject(raw)
+		if err != nil {
+			return nil, err
+		}
+		if string(turn["id"]) == string(assistantChatJSON(run.Binding.RequestID)) {
+			creationAction, err = readAssistantCreationAction(raw)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := validateAssistantDomainOutputs(run); err != nil {
+		return nil, err
+	}
+	if err := validateAssistantSavedPackSource(source, run); err != nil {
+		return nil, err
+	}
+	if err := validateAssistantTestProjectionSource(source, run); err != nil {
+		return nil, err
+	}
+	if err := validateAssistantPolicyProjectionSource(source, run); err != nil {
+		return nil, err
+	}
+	graphOutputs := []assistantDomainOutput{}
+	for _, out := range run.DomainOutputs {
+		if out.Kind == "graph" {
+			graphOutputs = append(graphOutputs, out)
+		}
+	}
+	if len(graphOutputs) > 0 {
+		existing := chat["graphDrafts"]
+		if existing == nil {
+			existing = []byte("[]")
+		}
+		drafts, err := assistantChatArray(existing)
+		if err != nil {
+			return nil, err
+		}
+		if len(drafts)+len(graphOutputs) > 16 {
+			return nil, errAssistantRunInvalid
+		}
+		seen := map[string]bool{}
+		for _, raw := range drafts {
+			var d graphDraft
+			if json.Unmarshal(raw, &d) != nil {
+				return nil, errAssistantRunInvalid
+			}
+			seen[d.DraftID] = true
+		}
+		for _, out := range graphOutputs {
+			if seen[out.Draft.DraftID] {
+				return nil, errAssistantRunConflict
+			}
+			seen[out.Draft.DraftID] = true
+			drafts = append(drafts, assistantChatJSON(out.Draft))
+		}
+		chat["graphDrafts"] = assistantChatEncodeArray(drafts)
+	}
+	if err := appendAssistantPlanOutputs(chat, run.DomainOutputs); err != nil {
+		return nil, err
+	}
+	if err := appendAssistantDialectRecipeOutputs(chat, run.DomainOutputs); err != nil {
+		return nil, err
+	}
+	if err := appendAssistantPolicyOutputs(chat, run.DomainOutputs); err != nil {
+		return nil, err
+	}
+	if err := appendAssistantDialectActions(chat, run.DomainOutputs); err != nil {
+		return nil, err
+	}
+	// Validate association identities rather than pairing by tool name or prose.
+	ids := map[string]bool{}
+	for index, raw := range turns {
+		turn, err := assistantChatObject(raw)
+		var id string
+		if err != nil || json.Unmarshal(assistantChatTurnID(turn, index), &id) != nil || !assistantChatProjectionID(id) || ids[id] {
+			return nil, errAssistantRunInvalid
+		}
+		ids[id] = true
+	}
+	responseIDs := map[string]bool{}
+	for _, raw := range responses {
+		var row struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(raw, &row) != nil || !assistantChatProjectionID(row.ID) || responseIDs[row.ID] || row.ID == assistantChatResponseID(run.ID) {
+			return nil, errAssistantRunConflict
+		}
+		responseIDs[row.ID] = true
+	}
+	searches, err := appendAssistantSearchOutputs(chat, run)
+	if err != nil {
+		return nil, err
+	}
+	websites, err := appendAssistantWebsiteOutputs(chat, run)
+	if err != nil {
+		return nil, err
+	}
+	documents, err := appendAssistantLinkOutputs(chat, run)
+	if err != nil {
+		return nil, err
+	}
+	responseID := assistantChatResponseID(run.ID)
+	candidates, err = appendAssistantSavedPackCandidates(candidates, run, responseID)
+	if err != nil {
+		return nil, err
+	}
+	items := []map[string]any{}
+	calls := map[string]int{}
+	completed := map[string]bool{}
+	notices := []string{}
+	messageID := ""
+	work := map[string]any{}
+	for _, held := range assistantRunHistoryProjection(run).Events {
+		event := held.Event
+		switch {
+		case event.Message != nil:
+			id := responseID + "-message-" + digestOf([]byte(held.ID))[:16]
+			if ids[id] {
+				return nil, errAssistantRunConflict
+			}
+			ids[id] = true
+			turn := map[string]any{"id": id, "role": "assistant", "kind": "message", "text": event.Message.Text, "at": at}
+			if run.State != "complete" {
+				turn["interrupted"] = true
+			}
+			turns = append(turns, assistantChatJSON(turn))
+			messageID = id
+		case event.ToolCall != nil:
+			call := event.ToolCall
+			if call.CallID == nil || !assistantRunText(*call.CallID, 256) || !assistantRunText(call.Name, 200) {
+				return nil, errAssistantRunInvalid
+			}
+			if _, ok := calls[*call.CallID]; ok {
+				return nil, errAssistantRunConflict
+			}
+			calls[*call.CallID] = len(items)
+			items = append(items, map[string]any{"id": *call.CallID, "name": assistantExternalDisplayName(run, *call.CallID, call.Name), "status": "interrupted"})
+		case event.ToolResult != nil:
+			result := event.ToolResult
+			if result.CallID == nil {
+				return nil, errAssistantRunInvalid
+			}
+			index, ok := calls[*result.CallID]
+			if !ok || completed[*result.CallID] || items[index]["name"] != assistantExternalDisplayName(run, *result.CallID, result.Name) {
+				return nil, errAssistantRunConflict
+			}
+			completed[*result.CallID] = true
+			status := "complete"
+			if result.IsError {
+				status = "failed"
+			}
+			items[index]["status"] = status
+			if assistantExternalDisplayName(run, *result.CallID, result.Name) == assistantLinkTool {
+				if err := assistantLinkProjectionItem(run, *result.CallID, items[index]); err != nil {
+					return nil, err
+				}
+			}
+			if assistantExternalDisplayName(run, *result.CallID, result.Name) == assistantSearchTool {
+				if err := assistantSearchProjectionItem(run, *result.CallID, items[index]); err != nil {
+					return nil, err
+				}
+			}
+		case event.Error != nil:
+			if event.Error.Failure != nil {
+				held, ok := failure.Read(*event.Error.Failure)
+				if !ok {
+					return nil, errAssistantRunInvalid
+				}
+				state["failure"] = assistantChatJSON(held)
+			}
+			// Retain the canonical error's text separately from artifact-check state.
+			notices = append(notices, event.Error.Message)
+		case event.Critique != nil:
+			c := event.Critique
+			// Match the shared saved critic reader; generated event types alone do
+			// not validate domain payload bounds. Refuse rather than save unreadable history.
+			if len(c.Cases) > 200 || len(c.Incomplete) > 64 {
+				return nil, errAssistantRunInvalid
+			}
+			for _, id := range c.Incomplete {
+				if runcontext.U16Length(id) > 200 {
+					return nil, errAssistantRunInvalid
+				}
+			}
+			if f := c.Figures; f != nil {
+				if f.Model == "" || runcontext.U16Length(f.Model) > 200 || !contains([]string{"model-requests", "agent-runs"}, f.Unit) || f.Requests < 0 || f.Requests > 1000 {
+					return nil, errAssistantRunInvalid
+				}
+				for _, n := range []*int64{f.HarnessCalls, f.InputTokens, f.OutputTokens, f.ReasoningTokens, f.CacheReadTokens, f.CacheWriteTokens} {
+					if n != nil && (*n < 0 || *n > 9007199254740991) {
+						return nil, errAssistantRunInvalid
+					}
+				}
+			}
+			work["critique"] = c.Text
+			if len(c.Cases) > 0 || len(c.Incomplete) > 0 || c.Figures != nil {
+				disagreed := 0
+				for _, row := range c.Cases {
+					if !row.Agrees {
+						disagreed++
+					}
+				}
+				critic := map[string]any{"compared": len(c.Cases), "disagreed": disagreed, "incomplete": c.Incomplete, "runModel": run.Binding.Model}
+				if c.Incomplete == nil {
+					critic["incomplete"] = []string{}
+				}
+				if c.Figures != nil {
+					critic["figures"] = c.Figures
+				}
+				work["critic"] = critic
+			}
+		case event.Proposal != nil:
+			if creationAction != nil && contains([]string{"establish-cases", "propose-correction"}, creationAction.Kind) {
+				continue
+			}
+			for _, key := range []string{"pack", "graph", "input", "policy"} {
+				if raw, ok := chat[key]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+					return nil, errAssistantChatProjectionUnsupported
+				}
+			}
+			if raw := chat["draftId"]; raw != nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) && chat["draftGeneration"] == nil {
+				return nil, errAssistantChatProjectionUnsupported
+			}
+			if event.Proposal.Document == nil {
+				return nil, errAssistantRunInvalid
+			}
+			text, err := json.Marshal(event.Proposal.Document)
+			if err != nil || !uniqueJSON(text) {
+				return nil, errAssistantRunInvalid
+			}
+			candidates = append(candidates, assistantChatJSON(map[string]any{"text": string(text), "responseId": responseID}))
+			unknowns := event.Proposal.Unknowns
+			if unknowns == nil {
+				unknowns = []string{}
+			}
+			state["unknowns"] = assistantChatJSON(unknowns)
+		case event.UserQuestion != nil:
+			q := event.UserQuestion
+			var answer *assistantRunAnswer
+			var actionID string
+			for _, receipt := range assistantRunHistoryProjection(run).Actions {
+				if receipt.Answer != nil && receipt.Answer.QuestionID == q.ID {
+					answer, actionID = receipt.Answer, receipt.ID
+				}
+			}
+			if answer == nil {
+				return nil, errAssistantChatProjectionQuestion
+			}
+			if err := validateAssistantRunAnswer(assistantRunHistoryProjection(run), *answer); err != nil {
+				return nil, err
+			}
+			answerID := "answer-" + digestOf([]byte(run.ID + "\x00" + actionID))[:32]
+			if ids[q.ID] || ids[answerID] {
+				return nil, errAssistantRunConflict
+			}
+			ids[q.ID], ids[answerID] = true, true
+			labels := []string{}
+			for _, id := range answer.Selected {
+				for _, option := range q.Question.Options {
+					if option.ID == id {
+						labels = append(labels, option.Label)
+					}
+				}
+			}
+			display := strings.Join(labels, "; ")
+			if answer.Text != "" {
+				if display != "" {
+					display += "\n"
+				}
+				display += answer.Text
+			}
+			turns = append(turns, assistantChatJSON(map[string]any{"id": q.ID, "role": "assistant", "kind": "question", "text": q.Question.Question, "at": answer.At}), assistantChatJSON(map[string]any{"id": answerID, "role": "user", "kind": "message", "text": display, "statement": display, "at": answer.At}))
+			questions, err := assistantChatArray(state["questions"])
+			if err != nil {
+				return nil, err
+			}
+			continued := true
+			questions = append(questions, assistantChatJSON(contract.QuestionSaved{ID: q.ID, Prompt: q.Question, Draft: contract.QuestionDraft{Selected: answer.Selected, Text: answer.Text}, Resolution: &contract.QuestionSavedResolution{Kind: "answered", At: answer.At, TurnID: answerID, Continued: &continued}}))
+			state["questions"] = assistantChatEncodeArray(questions)
+		}
+	}
+	for _, out := range run.DomainOutputs {
+		if out.Kind != "website" {
+			continue
+		}
+		exists := false
+		for _, item := range items {
+			if item["id"] == out.CallID && item["name"] == assistantWebsiteTool {
+				exists = true
+			}
+		}
+		if !exists {
+			status := "complete"
+			if op := assistantDialectOperation(run, out.OperationID); op != nil && op.State == "refused" {
+				status = "failed"
+			}
+			items = append(items, map[string]any{"id": out.OperationID, "name": assistantWebsiteTool, "status": status, "summary": "Website navigation map retained; page evidence requires read_link."})
+		}
+	}
+	for _, out := range run.DomainOutputs {
+		if out.Kind != "link-document" {
+			continue
+		}
+		found := false
+		for _, item := range items {
+			if item["id"] == out.CallID && item["name"] == assistantLinkTool {
+				if err := assistantLinkProjectionItem(run, out.CallID, item); err != nil {
+					return nil, err
+				}
+				found = true
+			}
+		}
+		if !found {
+			status := "complete"
+			if op := assistantDialectOperation(run, out.OperationID); op != nil && op.State == "refused" {
+				status = "failed"
+			}
+			item := map[string]any{"id": out.OperationID, "name": assistantLinkTool, "status": status}
+			if err := assistantLinkProjectionItem(run, out.CallID, item); err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+	}
+	for _, out := range run.DomainOutputs {
+		if out.Kind != "search" {
+			continue
+		}
+		found := false
+		for _, item := range items {
+			if item["id"] == out.CallID && item["name"] == assistantSearchTool {
+				item["search"] = out.Search.Step
+				item["status"] = "complete"
+				delete(item, "failure")
+				found = true
+			}
+		}
+		if !found {
+			items = append(items, map[string]any{"id": out.OperationID, "name": assistantSearchTool, "status": "complete", "search": out.Search.Step})
+		}
+	}
+	for _, row := range assistantExternalCalls(run) {
+		for _, item := range items {
+			if item["id"] != row.CallID || item["name"] != row.OwnTool {
+				continue
+			}
+			if row.Control != nil {
+				assistantExternalControlItem(item, *row.Control)
+				notices = append(notices, assistantExternalControlMessage(*row.Control))
+			} else if row.Outcome == "unknown" {
+				item["status"] = "failed"
+				notices = append(notices, "External source outcome is unknown. Review retained work before starting another request.")
+			}
+		}
+	}
+	for _, result := range assistantApprovalResults(run) {
+		status := "complete"
+		if result.IsError {
+			status = "failed"
+		}
+		if index, ok := calls[result.CallID]; ok {
+			items[index]["approvalResult"] = result.Result
+			items[index]["status"] = status
+		} else {
+			items = append(items, map[string]any{"id": result.CallID, "name": assistantExternalDisplayName(run, result.CallID, result.Name), "status": status, "approvalResult": result.Result})
+		}
+	}
+	work["items"] = items
+	work["notices"] = notices
+	if run.Checkpoint != nil {
+		report := map[string]any{"requests": run.Checkpoint.Used, "unit": run.Checkpoint.Unit}
+		canonical, err := assistantCanonicalRunReport(run.Checkpoint)
+		if err != nil {
+			return nil, err
+		}
+		if canonical != nil {
+			report["canonical"] = canonical
+		}
+		if run.Checkpoint.Critic != nil {
+			report["critic"] = run.Checkpoint.Critic
+		}
+		if run.Checkpoint.Prompts != nil {
+			report["prompts"] = append([]contract.ProvenancePromptDigest{}, run.Checkpoint.Prompts...)
+		}
+		work["report"] = report
+		display := *assistantChatProjectionCheckpoint(run)
+		// Approval/handoff capabilities stay in the bound ledger. Historical
+		// allowance records and used counters are facts, not fresh grants.
+		display.Approval = nil
+		display.Handoff = nil
+		state["execution"] = assistantChatJSON(display)
+	}
+	response := map[string]any{"searches": searches, "id": responseID, "afterTurnId": run.Binding.RequestID, "documents": documents, "websites": websites, "sourceIds": []string{}, "work": work}
+	if messageID != "" {
+		response["messageId"] = messageID
+		delete(response, "afterTurnId")
+	}
+	responses = append(responses, assistantChatJSON(response))
+	turns, err = appendAssistantTestLinks(turns, run, at)
+	if err != nil {
+		return nil, err
+	}
+	state["turns"] = assistantChatEncodeArray(turns)
+	state["candidates"] = assistantChatEncodeArray(candidates)
+	state["responses"] = assistantChatEncodeArray(responses)
+	status := "stopped"
+	if run.State == "complete" {
+		status = "ready"
+	}
+	if run.State == "failed" {
+		status = "failed"
+	}
+	state["status"] = assistantChatJSON(status)
+	state["phase"] = assistantChatJSON("conversation")
+	if run.Creation != nil {
+		if err := projectAssistantCreation(state, run, responseID); err != nil {
+			return nil, err
+		}
+	}
+	cp["state"] = assistantChatEncodeObject(state)
+	if cp["sources"] == nil {
+		cp["sources"] = []byte("[]")
+	}
+	chat["checkpoint"] = assistantChatEncodeObject(cp)
+	chat["updatedAt"] = assistantChatJSON(at)
+	out := assistantChatEncodeObject(chat)
+	if len(out) > maxConversationBytes {
+		return nil, fmt.Errorf("chat projection exceeds storage bounds")
+	}
+	return out, nil
+}
+func assistantChatProjectionTime() string { return time.Now().UTC().Format(time.RFC3339Nano) }

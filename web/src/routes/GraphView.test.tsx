@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -18,7 +18,7 @@ import {
   UNRESOLVED
 } from '../testing/dispositions'
 import type { GraphInventory, GraphSuite } from '../mcp/types'
-import { GraphView } from './GraphView'
+import { GraphNodeItem, GraphView } from './GraphView'
 
 // Exercise the explicit command before checking the result presentation.
 async function renderAndRun(...args: Parameters<typeof renderConnected>) {
@@ -1066,5 +1066,36 @@ describe('the graphs page, against rows that assert a handoff target (ADR-0032)'
     for (const side of targets) {
       expect(side.className).not.toContain('row-side-differs')
     }
+  })
+})
+
+// The graph caller folds the shared renderer; evaluation keeps its own layout.
+describe('graph node trace disclosure (#10)', () => {
+  it('starts collapsed with its node and exact count, and preserves walk order on opening', () => {
+    const { container } = render(<ul><GraphNodeItem node={{ node: 'screening', status: 'passed', actual: CLEAR, expected: CLEAR, trace: [
+      { stage: 'rule', id: 'first', condition: 'true' },
+      { stage: 'exception', id: 'second', condition: 'false' },
+      { stage: 'rule', id: 'third', condition: 'unknown' }
+    ] }} /></ul>)
+    const details = container.querySelector('details')!
+    expect(details).not.toBeNull()
+    expect(details.open).toBe(false)
+    const summary = details.querySelector('summary')!
+    expect(summary.textContent).toContain('Trace of screening')
+    expect(summary.textContent).toContain('3 trace entries')
+    fireEvent.click(summary)
+    expect(details.open).toBe(true)
+    expect([...details.querySelectorAll('.trace-stage h4')].map(h => h.textContent)).toEqual(['rule', 'exception', 'rule'])
+    const content = details.textContent!
+    expect(content.indexOf('first')).toBeLessThan(content.indexOf('second'))
+    expect(content.indexOf('second')).toBeLessThan(content.indexOf('third'))
+  })
+  it('reports zero entries in the summary and renders nothing for an absent trace', () => {
+    const { container, rerender } = render(<ul><GraphNodeItem node={{ node: 'decision', status: 'passed', actual: CLEAR, expected: CLEAR, trace: [] }} /></ul>)
+    expect(container.querySelector('summary')!.textContent).toContain('0 trace entries')
+    expect(container.textContent).toContain("This node's evaluation carries no trace entries")
+    rerender(<ul><GraphNodeItem node={{ node: 'decision', status: 'passed', actual: CLEAR, expected: CLEAR }} /></ul>)
+    expect(container.querySelector('details')).toBeNull()
+    expect(container.textContent).not.toContain('trace entries')
   })
 })

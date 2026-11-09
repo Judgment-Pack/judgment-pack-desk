@@ -736,13 +736,21 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, statusForRefusal(err), err)
 		return
 	}
+	assembled, canonical := r.Context().Value(assistantAssembledPromptKey{}).(*assistantModelDispatch)
+	settingsPing := canonical && assembled != nil && assembled.settingsPing()
+	if settingsPing {
+		if err = assembled.execution.Authorize(r.Context()); err != nil {
+			assistantRunHTTPError(w, err)
+			return
+		}
+	}
 	listing := r.Method == http.MethodGet && suffix == relayListingSuffix[endpoint.kind]
 	profile, profileErr := s.readAssistantProfile()
-	if profileErr != nil && !listing {
+	if profileErr != nil && !listing && !settingsPing {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured, assistantProfileProblem)
 		return
 	}
-	if !listing && connection != nil {
+	if !listing && connection != nil && !settingsPing {
 		if r.Header.Get(aiRevisionHeader) == "" || !connection.Enabled || profile.Version == 2 && profile.Inherit != nil && !*profile.Inherit && !contains(profile.Connections, connection.ID) {
 			writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured, "This AI connection is unavailable for this desk. Choose another connection.")
 			return
@@ -870,19 +878,24 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			"the request body could not be read, and nothing was sent")
 		return
 	}
-	if !listing && connection != nil && !profileAPIModelAllowed(endpoint.kind, suffix, body, connectionModels(connection, profile)) {
+	if canonical && assembled != nil && assembled.execution.observation != nil {
+		if err = assistantSettingsWire(assembled.execution.source, suffix, relayObservationRequest(r, body)); err != nil {
+			assistantRunHTTPError(w, err)
+			return
+		}
+	}
+	if !listing && connection != nil && !settingsPing && !profileAPIModelAllowed(endpoint.kind, suffix, body, connectionModels(connection, profile)) {
 		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "Choose a model enabled for this AI connection and desk.")
 		return
 	}
-	if !listing {
-		body, err = s.prepareModelContext(endpoint.kind, suffix, body)
-		if err != nil {
+	if !listing && !canonical {
+		if err = s.checkModelWireContext(endpoint.kind, suffix, body); err != nil {
 			writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, err.Error())
 			return
 		}
 	}
 
-	if !listing && connection == nil && profile.API != nil && !profile.API.Inherit && !profileAPIModelAllowed(endpoint.kind, suffix, body, profile.API.Models) {
+	if !listing && !settingsPing && connection == nil && profile.API != nil && !profile.API.Inherit && !profileAPIModelAllowed(endpoint.kind, suffix, body, profile.API.Models) {
 		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "Choose an enabled model in Admin › Assistant.")
 		return
 	}
@@ -892,6 +905,10 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	r.ContentLength = int64(len(body))
 	r.TransferEncoding = nil
 
+	transport := http.RoundTripper(beforeTheFirstByte{inner: relayTransport, cancel: cancel})
+	if canonical {
+		transport = assistantModelTransport{inner: transport, bound: assembled}
+	}
 	status := 0
 	proxy := &httputil.ReverseProxy{
 		// `Rewrite` rather than `Director`, and the difference is a header
@@ -935,7 +952,7 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			out.Header = carried
 		},
-		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},
+		Transport:     transport,
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
 			if response.StatusCode == http.StatusTooManyRequests {

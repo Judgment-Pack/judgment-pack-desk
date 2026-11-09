@@ -8,9 +8,11 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type inputConversion struct {
@@ -114,6 +116,15 @@ func convertInput(value string, c inputConversion) (any, error) {
 	return nil, errors.New("Unsupported conversion.")
 }
 func prepareInputRecord(doc inputPreparation, record preparedInputRecord) (inputPreparedRow, error) {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return inputPreparedRow{}, err
+	}
+	// Preserve the legacy null-as-blank view without rewriting retained cells.
+	var err error
+	record, err = legacyInputRecord(record)
+	if err != nil {
+		return inputPreparedRow{}, err
+	}
 	row := inputPreparedRow{ID: record.ID, Origin: record.Class, Original: record.Values, Prepared: map[string]any{}, Issues: []inputConversionIssue{}}
 	q := doc.Recipe.Qualification
 	if record.Class == "generated" && record.Research == nil {
@@ -181,6 +192,9 @@ func prepareInputRecord(doc inputPreparation, record preparedInputRecord) (input
 	return row, nil
 }
 func prepareInputSelection(doc inputPreparation, ids []string) ([]inputPreparedRow, error) {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return nil, err
+	}
 	if len(ids) == 0 || len(ids) > inputRecordLimit {
 		return nil, errors.New("Select between 1 and 1,000 records.")
 	}
@@ -220,4 +234,170 @@ func sameDecimal(a, b string) bool {
 	}
 	y, ok := new(big.Rat).SetString(b)
 	return ok && x.Cmp(y) == 0
+}
+
+// These closed leaves describe execution rules, never a prepared value. Sidecar
+// metadata is compared with them but cannot substitute for document rules.
+type inputRetainedConversion struct {
+	ContractVersion string  `json:"contractVersion"`
+	Column          string  `json:"column"`
+	Kind            string  `json:"kind"`
+	TrueValue       *string `json:"trueValue,omitempty"`
+	FalseValue      *string `json:"falseValue,omitempty"`
+}
+type inputRetainedAvailability struct {
+	ContractVersion string `json:"contractVersion"`
+	Column          string `json:"column"`
+}
+
+func (c *inputRetainedConversion) UnmarshalJSON(raw []byte) error {
+	type plain inputRetainedConversion
+	if err := checkJSONMembers(raw, reflect.TypeOf(plain{})); err != nil {
+		return err
+	}
+	var value plain
+	if err := decodeInputShape(raw, &value, reflect.TypeOf(value), "trueValue", "falseValue"); err != nil {
+		return err
+	}
+	candidate := inputRetainedConversion(value)
+	if _, err := candidate.sidecar(); err != nil {
+		return err
+	}
+	*c = candidate
+	return nil
+}
+func (a *inputRetainedAvailability) UnmarshalJSON(raw []byte) error {
+	type plain inputRetainedAvailability
+	var value plain
+	if err := decodeInputShape(raw, &value, reflect.TypeOf(value)); err != nil {
+		return err
+	}
+	if value.ContractVersion != "1" || !inputRetainedScalar(value.Column, false) {
+		return retainedContractFailure("input-malformed")
+	}
+	*a = inputRetainedAvailability(value)
+	return nil
+}
+func inputRetainedScalar(value string, nonblank bool) bool {
+	return value != "" && len(value) <= 160 && utf8.ValidString(value) && (!nonblank || strings.TrimSpace(value) != "")
+}
+func (c inputRetainedConversion) sidecar() (inputConversion, error) {
+	fail := retainedContractFailure("input-malformed")
+	result := inputConversion{Kind: c.Kind}
+	if c.ContractVersion != "1" || !inputRetainedScalar(c.Column, false) {
+		return result, fail
+	}
+	switch c.Kind {
+	case "text", "decimal", "number", "research-value":
+		if c.TrueValue != nil || c.FalseValue != nil {
+			return result, fail
+		}
+	case "boolean":
+		if c.TrueValue == nil || c.FalseValue == nil || !inputRetainedScalar(*c.TrueValue, true) || !inputRetainedScalar(*c.FalseValue, true) || *c.TrueValue == *c.FalseValue {
+			return result, fail
+		}
+		result.TrueValue, result.FalseValue = *c.TrueValue, *c.FalseValue
+	default:
+		return result, fail
+	}
+	return result, nil
+}
+
+type retainedInputFactBinding struct {
+	Target     string
+	Column     string
+	Conversion inputConversion
+}
+type retainedInputEvidenceBinding struct {
+	Requirement string
+	Column      string
+}
+type retainedInputRules struct {
+	Facts    []retainedInputFactBinding
+	Evidence []retainedInputEvidenceBinding
+}
+
+// Extract the logical case template only. Runtime pack coverage, original cells,
+// asserted/generated materialization and operation admission have separate owners.
+func retainedInputMappingRules(q *inputQualification) (retainedInputRules, error) {
+	rules := retainedInputRules{Facts: []retainedInputFactBinding{}, Evidence: []retainedInputEvidenceBinding{}}
+	bad := retainedContractFailure("input-malformed")
+	if q == nil || q.ConversionContract == nil || *q.ConversionContract != inputRetainedContract() {
+		return rules, retainedContractFailure("capability-unsupported")
+	}
+	m := q.Mapping
+	if m.Version != 2 || m.Profile == nil || *m.Profile != q.ConversionContract.Profile || m.Case == nil || m.Sources == nil || len(m.Sources) != 0 || m.Case.Facts == nil || m.Case.Evidence == nil || len(m.Case.Facts) > 256 || len(m.Case.Evidence) > 128 {
+		return rules, bad
+	}
+	targets, requirements := map[string]bool{}, map[string]bool{}
+	for _, f := range m.Case.Facts {
+		if f.Source != "/retained" || !inputPointerValid(f.Target) || !utf8.ValidString(f.Target) || targets[f.Target] || f.Conversion == nil {
+			return rules, bad
+		}
+		for prior := range targets {
+			if strings.HasPrefix(prior, f.Target+"/") || strings.HasPrefix(f.Target, prior+"/") {
+				return rules, bad
+			}
+		}
+		sidecar, err := f.Conversion.sidecar()
+		if err != nil {
+			return rules, err
+		}
+		actual, exists := q.Conversions[f.Target]
+		if !exists || actual != sidecar {
+			return rules, bad
+		}
+		targets[f.Target] = true
+		rules.Facts = append(rules.Facts, retainedInputFactBinding{Target: f.Target, Column: f.Conversion.Column, Conversion: sidecar})
+	}
+	if len(q.Conversions) != len(targets) {
+		return rules, bad
+	}
+	for _, e := range m.Case.Evidence {
+		if e.Requirement == "" || !utf8.ValidString(e.Requirement) || requirements[e.Requirement] || e.Source != "/retained" || e.Availability == nil || e.Availability.ContractVersion != "1" || !inputRetainedScalar(e.Availability.Column, false) {
+			return rules, bad
+		}
+		requirements[e.Requirement] = true
+		rules.Evidence = append(rules.Evidence, retainedInputEvidenceBinding{Requirement: e.Requirement, Column: e.Availability.Column})
+	}
+	for _, target := range m.Unmapped {
+		if !inputPointerValid(target) || !utf8.ValidString(target) || targets[target] {
+			return rules, bad
+		}
+		targets[target] = true
+	}
+	for _, requirement := range m.UnmappedEvidence {
+		if requirement == "" || !utf8.ValidString(requirement) || requirements[requirement] {
+			return rules, bad
+		}
+		requirements[requirement] = true
+	}
+	return rules, nil
+}
+
+// The explicit supplied identity is mandatory; helper availability never selects
+// a recipe. The caller retains pack bytes, digest and review/save authority.
+func buildRetainedInputMapping(selection retainedConversionContract, rules retainedInputRules, unmapped, unmappedEvidence []string) (inputRecordDialect, map[string]inputConversion, error) {
+	profile := selection.Profile
+	mapping := inputRecordDialect{Version: 2, Profile: &profile, Sources: []json.RawMessage{}, Case: &inputCaseDialect{Facts: []inputDialectFact{}, Evidence: []inputDialectEvidence{}}, Unmapped: append([]string(nil), unmapped...), UnmappedEvidence: append([]string(nil), unmappedEvidence...)}
+	sidecars := map[string]inputConversion{}
+	for _, f := range rules.Facts {
+		c := &inputRetainedConversion{ContractVersion: "1", Column: f.Column, Kind: f.Conversion.Kind}
+		if c.Kind == "boolean" {
+			yes, no := f.Conversion.TrueValue, f.Conversion.FalseValue
+			c.TrueValue, c.FalseValue = &yes, &no
+		} else if f.Conversion.TrueValue != "" || f.Conversion.FalseValue != "" {
+			return inputRecordDialect{}, nil, retainedContractFailure("input-malformed")
+		}
+		mapping.Case.Facts = append(mapping.Case.Facts, inputDialectFact{Target: f.Target, Source: "/retained", Conversion: c})
+		sidecars[f.Target] = f.Conversion
+	}
+	for _, e := range rules.Evidence {
+		mapping.Case.Evidence = append(mapping.Case.Evidence, inputDialectEvidence{Requirement: e.Requirement, Source: "/retained", Availability: &inputRetainedAvailability{ContractVersion: "1", Column: e.Column}})
+	}
+	q := &inputQualification{ConversionContract: &selection, Mapping: mapping, Conversions: sidecars}
+	if _, err := retainedInputMappingRules(q); err != nil {
+		return inputRecordDialect{}, nil, err
+	}
+	return mapping, sidecars, nil
 }

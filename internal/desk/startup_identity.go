@@ -448,6 +448,32 @@ func (s *Server) openIdentityFolder() (*os.Root, error) {
 	return root, err
 }
 
+// openIdentityFolderToRead opens `.desk-private/` only to read the identity
+// in it, under the census rule for what Desk reads and measures
+// (storageCensusMeasuredDirectory, desk #685): a real folder, the user's,
+// that neither group nor others can write. Group and other read are not
+// refused, so a folder a umask of 022 left at 0755 is read. Desk writes the
+// identity only through openIdentityFolder, which keeps the private rule. It
+// is fs.ErrNotExist where the project has none.
+func (s *Server) openIdentityFolderToRead() (_ *os.Root, err error) {
+	info, err := s.root.Lstat(startupIdentityDir)
+	if err != nil {
+		return nil, err
+	}
+	if !storageCensusMeasuredDirectory(info) {
+		return nil, fmt.Errorf("%s is not a folder Desk reads %s from: it must be a folder of the user running Desk that no group or other user can write", startupIdentityDir, startupIdentityKept)
+	}
+	root, err := s.root.OpenRoot(startupIdentityDir)
+	if err != nil {
+		return nil, err
+	}
+	held, err := root.Stat(".")
+	if err != nil || !os.SameFile(info, held) {
+		return nil, errors.Join(errStorageCustody, err, root.Close())
+	}
+	return root, nil
+}
+
 // identityFolderUsable is nil where the project's identity can be written:
 // its `.desk-private/` is not there, and would be made owner-only, or is a
 // folder Desk holds. Otherwise it says why, in words with no path.
@@ -600,6 +626,12 @@ func (s *Server) resolveStartupIdentity() {
 			return
 		}
 	}
+	if s.storageEnrollment != nil {
+		// Original startup/private demand completed its finite J/Q/native lineage
+		// before handoff. Late startup only observes; it cannot start an unjournaled
+		// migration after the same-descriptor EX→SH transition.
+		return
+	}
 	s.migrateStartupIdentity(private, record, info, found)
 }
 
@@ -626,6 +658,14 @@ func (s *Server) copiedOrMoved(private *os.Root, record identityRecord, info os.
 		s.setHistoryMoveProblem("Confirm whether this project was moved or copied in Decision safeguards before opening its history.")
 		s.log.Printf("desk: this project's identity was written in %s, which no longer holds it, and this folder is not shown to be that one moved here, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy", record.Path)
 		return record, info
+	}
+	if moved, written, handled, moveErr := s.retainDialectArtifactRecognizedMove(private, record, info); handled {
+		if moveErr != nil {
+			s.retainedRecognizedMoveStartupErr = moveErr
+			s.setHistoryMoveProblem("Retained project move needs recovery before history can be opened. " + moveErr.Error())
+			return record, info
+		}
+		return moved, written
 	}
 	unlock, err := s.lockProject(context.Background(), 0)
 	if err != nil {

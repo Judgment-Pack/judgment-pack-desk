@@ -54,6 +54,8 @@ import { useFileListing } from '../files/queries'
 import { desksAPI } from '../desks/DeskSwitcher'
 import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
+import { StorageBudgetStatus } from '../admin/StorageBudgetStatus'
+import { useStorageLineOff } from '../admin/useStorageBudgetStatus'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { PolicyRecoverySettings } from '../admin/PolicyRecoverySettings'
 import { AssistantSection } from '../assistant/AssistantSection'
@@ -62,6 +64,7 @@ import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { ConfigPane } from '../admin/ConfigPane'
 import { SourceCard, CardField, type SourceStatus } from '../admin/SourceCard'
 import { DeskHomeSettings } from '../admin/DeskHomeSettings'
+import { ProjectLocationSettings } from '../admin/ProjectLocation'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { SignInSettings } from '../auth/SignInSettings'
@@ -94,6 +97,7 @@ export function AdminView() {
   const tab = connectionTab(hash)
   // General's Startup field and its Save, sharing one draft across two slots.
   const defaultProject = useDefaultProject()
+  const storageOff = useStorageLineOff()
   const directory = useQuery({ ...privateQuery,queryKey: ['desks'], queryFn: () => desksAPI<{ current: { name: string } }>() })
   // **One unsaved draft at a time between the desk's model preferences and the
   // shared AI connections.** Each blocks the other while it holds an edit, so
@@ -185,6 +189,7 @@ export function AdminView() {
                       {defaultProject.save}
                     </SettingsSection>
                     <DeskHomeSettings />
+                    <ProjectLocationSettings />
                   </SettingsStack>
                 </SettingsSection>
               </RetainedPanel>
@@ -201,6 +206,7 @@ export function AdminView() {
                       description={effective.sources.storage === 'desk file' ? msg('Shared on this computer') : msg('This desk')}
                       fields={<StorageKind />}
                       save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocationState(effective.config.storage.packs.dir, listing)]} />} />
+                    {!storageOff && <StorageBudgetStatus />}
                     <ChatDataSettings />
                     <PolicyRecoverySettings active={id==='storage'} />
                   </SettingsStack>

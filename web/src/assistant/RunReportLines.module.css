@@ -5,3 +5,5 @@
 .table thead th { color: var(--ink-soft); }
 .total th, .total td { font-weight: 500; }
 .mark { color: var(--ink-soft); }
+
+.digest { user-select: text; overflow-wrap: anywhere; word-break: break-word; }

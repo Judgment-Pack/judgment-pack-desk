@@ -6,7 +6,7 @@ import {publicationPath,publicationFingerprint} from '../dialects/publicationPro
 import {savePublication} from '../dialects/savePublication'
 import {useDialectRecipeEditing,dialectRecipeIsEditing} from '../dialects/recipeEditing'
 import type {Chat,ChatStore} from './store'
-import type {ResearchRunBinding} from '../research/useResearchRun'
+import type {ResearchRunBinding} from '../research/types'
 import {msg} from '../i18n'
 export function useDialectPublicationAutoSave({chat,store,binding,restored}:{chat:Chat;store:ChatStore;binding:ResearchRunBinding;restored:boolean}){
  const approval=useActionApproval(chat.id,!!chat.inputActions?.some(a=>a.kind==='publish-dialect'&&!a.applied)),cache=useQueryClient()

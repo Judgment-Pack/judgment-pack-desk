@@ -93,7 +93,7 @@ func readExchangeHistory(root *os.Root) (exchangeHistory, error) {
 	return h, nil
 }
 func (s *Server) exchangeRoot() (*os.Root, error) {
-	root, _, e := openOwnFolder(s.root, strings.Split(exchangeDirectory, "/"), true, "Exchange imports")
+	root, _, e := openOwnFolderBy(s.root, strings.Split(exchangeDirectory, "/"), true, "Exchange imports", s.creation(nil))
 	return root, e
 }
 func (s *Server) exchangeCheck(ctx context.Context, document []byte) (string, string, error) {
@@ -163,7 +163,7 @@ func (s *Server) handleExchange(w http.ResponseWriter, r *http.Request) {
 			fail(400, errors.New("Choose a Git catalog location and release tag"))
 			return
 		}
-		tree, close, e := exchangeCatalog.OpenRelease(r.Context(), request.Location, request.Tag)
+		tree, close, e := exchangeCatalog.OpenRelease(exchangeCatalog.WithScratchObserver(r.Context(), s.observeExchangeScratch), request.Location, request.Tag)
 		if e != nil {
 			fail(422, e)
 			return

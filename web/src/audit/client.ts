@@ -1247,6 +1247,7 @@ export const WITNESS_REASONS = [
   sourceMessage('No witness is set for this desk, so Desk submits nothing.'),
   sourceMessage('A submission to the witness is in progress, so Desk starts no other. The decision record shows its outcome once it ends.'),
   sourceMessage('Desk is stopping, so it starts no submission.'),
+  sourceMessage('This desk runs no submissions to a witness, so it starts none.'),
   sourceMessage('A submission needs no settings: send {} as JSON.'),
   sourceMessage("This is the public key of Desk's own local gateway, which is yours as the operator: it is not a witness."),
   sourceMessage('This desk has a witness under another key. A pinned key is never changed in place: remove the witness, and add the one under the new key as a new witness.'),

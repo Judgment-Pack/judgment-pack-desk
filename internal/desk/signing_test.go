@@ -917,6 +917,8 @@ func TestNoPartOfTheKeysPathIsPassedOn(t *testing.T) {
 	}
 	const id = "a7000000000000000000000000000001"
 	seed := filepath.Join(config, "secrets", "signing", id+".seed")
+	// One installation, one project: each case starts Desk on it again.
+	project := t.TempDir()
 	leaks := func(t *testing.T, what, said string) {
 		t.Helper()
 		for _, part := range []string{"SECRET", "TAIL", "KEYS", "DIR", "(owner)", root, runtimePrints(config)} {
@@ -929,7 +931,7 @@ func TestNoPartOfTheKeysPathIsPassedOn(t *testing.T) {
 		t.Helper()
 		rig := newAuditRig(t, withAuditVersions)
 		rig.answers(t, 0, auditValidReport)
-		s, ts := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: rig.bin, Token: testToken, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)})
+		s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)})
 		t.Cleanup(func() { s.Close() })
 		t.Cleanup(ts.Close)
 		return rig, s, ts

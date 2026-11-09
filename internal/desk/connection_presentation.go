@@ -10,6 +10,7 @@ import (
 )
 
 type connectionSourceContract struct {
+	connectionSourceOwner
 	ID           string   `json:"id"`
 	Shape        string   `json:"shape"`
 	Record       string   `json:"record"`

@@ -294,3 +294,31 @@ describe('GraphWalkDiagram falling back', () => {
     expect(container.textContent).toContain('the runtime refused to serve it')
   })
 })
+
+// Browser dimensions and native keyboard scrolling are covered by the offline
+// graph-presentation fixture; this check guards which diagrams opt into it.
+describe('wide document graph presentation (#9)', () => {
+  it('gives a ten-node layer natural width in a named, keyboard-focusable region', () => {
+    const wide = shapeOf(JSON.stringify({ formatVersion: '1', id: 'wide', version: '1', nodes: Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`branch-${i}`, { pack: 'screen' }])), edges: [], result: 'branch-9' }), [])
+    const { container } = render(<GraphWalkDiagram entry={entry} shape={wide} />)
+    const region = container.querySelector('.diagram-scroll')!
+    expect(region.getAttribute('role')).toBe('region')
+    expect(region.getAttribute('tabindex')).toBe('0')
+    expect(region.getAttribute('aria-label')).toContain('onboarding')
+    expect(container.querySelector('svg')!.style.width).toBe('2720px')
+    expect(container.querySelector('svg')!.getAttribute('role')).toBe('img')
+  })
+  it('preserves one/two-node and coverage fallback sizing without a scroll region', () => {
+    for (const count of [1, 2]) {
+      const narrow = shapeOf(JSON.stringify({ formatVersion: '1', id: 'narrow', version: '1', nodes: Object.fromEntries(Array.from({ length: count }, (_, i) => [`node-${i}`, { pack: 'screen' }])), edges: [], result: 'node-0' }), [])
+      const { container, unmount } = render(<GraphWalkDiagram entry={entry} shape={narrow} />)
+      expect(container.querySelector('.diagram-scroll')).toBeNull()
+      expect(container.querySelector('svg')!.style.maxWidth).toBe(`${count === 1 ? 272 : 544}px`)
+      expect(container.querySelector('svg')!.style.width).toBe('')
+      unmount()
+    }
+    const { container } = render(<GraphWalkDiagram entry={entry} />)
+    expect(container.querySelector('.diagram-scroll')).toBeNull()
+    expect(container.querySelector('svg')!.getAttribute('class')).toBe('diagram')
+  })
+})

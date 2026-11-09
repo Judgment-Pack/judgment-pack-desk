@@ -331,7 +331,7 @@ func TestGraphRow4RefusalWordsAndPointers(t *testing.T) {
 
 // Both companion selections have a runtime; the ordinary Go job does not.
 func TestGraphRow4CompanionRuntimeSelection(t *testing.T) {
-	data, err := os.ReadFile("../../.github/workflows/ci.yml")
+	data, err := os.ReadFile("../../scripts/dev/jobs-companion.sh")
 	if err != nil {
 		t.Fatal(err)
 	}

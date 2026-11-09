@@ -46,7 +46,7 @@ describe('the recorded scenario on the Desk\'s wiring', () => {
         hostTools: [],
         model: { family: 'openai-compatible', model: 'scripted-model', call: bindModelCall('openai-compatible', CONNECTION) },
         thinking: normalize('off', 'openai-compatible'),
-        adversarialReview: false,
+        critic: 'off',
         signal: new AbortController().signal
       }, (event) => events.push(event))
     } finally {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -138,13 +139,7 @@ func (s *Server) handlePortableResearch(w http.ResponseWriter, r *http.Request) 
 			fail(err)
 			return
 		}
-		rr, err := openInputResearch(root, run.ID, true)
-		if err != nil {
-			fail(err)
-			return
-		}
-		defer rr.Close()
-		if err := s.researchJournal(rr, run.ID).Create(r.Context(), run); err != nil {
+		if err = s.admitPortableResearch(r.Context(), root, run); err != nil {
 			fail(err)
 			return
 		}
@@ -159,6 +154,9 @@ func (s *Server) handlePortableResearch(w http.ResponseWriter, r *http.Request) 
 	defer rr.Close()
 	journal := s.researchJournal(rr, id)
 	run, err := journal.Read(r.Context())
+	if err == nil {
+		err = s.researchRunStore(rr, id).validatePortableProofs(r.Context(), run)
+	}
 	if err != nil || run.Portable == nil {
 		writeJSONCoded(w, 404, CodeNotFound, "Research run not found.")
 		return
@@ -232,6 +230,32 @@ func (s *Server) handlePortableResearch(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, 200, portableResearchReply(run))
 }
+
+// admitPortableResearch creates the reviewed portable run in root, the
+// research folder: it joins ordinary research admission on the original root
+// directory, and keeps the all-entry count and the creation together under it,
+// released before the reply.
+func (s *Server) admitPortableResearch(ctx context.Context, root *os.Root, run inputResearchRun) error {
+	admission, admitted, err := s.lockResearchAdmission(root)
+	if err != nil {
+		return err
+	}
+	defer admission.Close()
+	entries, err := admission.ReadDir(-1)
+	if err != nil {
+		return err
+	}
+	if len(entries) >= 501 {
+		return errors.New("This project has reached its retained research-run limit.")
+	}
+	rr, err := openInputResearchBy(root, run.ID, true, admitted)
+	if err != nil {
+		return err
+	}
+	defer rr.Close()
+	return s.researchJournal(rr, run.ID).Create(ctx, run)
+}
+
 func queuePortableResearch(ctx context.Context, journal researchJournal, revision string) (inputResearchRun, error) {
 	return journal.Update(ctx, func(run *inputResearchRun) error {
 		if run.Portable == nil || run.Revision != revision || run.StopRequested {

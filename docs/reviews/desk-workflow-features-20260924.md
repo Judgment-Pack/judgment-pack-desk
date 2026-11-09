@@ -120,4 +120,4 @@ Screenshots use the browser fixtures described above:
 - [Quick switcher on a phone-sized viewport](desk-workflows-20260924/quick-switcher-mobile.png)
 - [Source refresh review](desk-workflows-20260924/source-refresh.png)
 
-Raw verification output remains in `/tmp/desk-features-review` for this session.
+Raw verification output remains in `<scratch>/desk-features-review` for this session.

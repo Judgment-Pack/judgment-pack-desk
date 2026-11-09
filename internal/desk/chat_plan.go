@@ -3,16 +3,53 @@ package desk
 import (
 	"encoding/json"
 	"errors"
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/jsonscalar"
 	"os"
+	"reflect"
 	"regexp"
+	"strings"
 	"time"
 )
 
 type chatPlanReference struct {
 	Kind     string `json:"kind"`
 	ID       string `json:"id"`
-	Revision string `json:"revision"`
+	Revision string `json:"revision,omitempty"`
+	Digest   string `json:"digest,omitempty"`
 }
+
+// Historical locators and current opaque references are distinct closed wire
+// variants. In particular, dialect kind alone cannot select the variant.
+func (r *chatPlanReference) UnmarshalJSON(raw []byte) error {
+	fields, err := assistantTestObject(raw)
+	if err != nil || len(fields) != 3 {
+		return errAssistantRunInvalid
+	}
+	type plain chatPlanReference
+	var value plain
+	if err = json.Unmarshal(raw, &value); err != nil {
+		return errAssistantRunInvalid
+	}
+	for key := range fields {
+		if key != "kind" && key != "id" && key != "revision" && key != "digest" {
+			return errAssistantRunInvalid
+		}
+	}
+	*r = chatPlanReference(value)
+	if !validChatPlanReference(*r) || (fields["revision"] != nil) == (fields["digest"] != nil) {
+		return errAssistantRunInvalid
+	}
+	return nil
+}
+
+func validChatPlanReference(r chatPlanReference) bool {
+	if r.Revision != "" {
+		return r.Digest == "" && contains([]string{"file", "dialect"}, r.Kind) && validPlanText(r.ID, 1024) && planDigest.MatchString(r.Revision)
+	}
+	return contains([]string{"artifact", "dialect"}, r.Kind) && validPlanText(r.ID, 256) && planDigest.MatchString(r.Digest)
+}
+
 type chatPlan struct {
 	ID         string              `json:"id"`
 	Revision   int                 `json:"revision"`
@@ -27,7 +64,11 @@ type chatPlan struct {
 
 var planDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-func validPlanText(s string, n int) bool { return len(s) > 0 && len([]rune(s)) <= n }
+func validPlanText(s string, n int) bool {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return r >= 9 && r <= 13 || r == 32 || r == 0xA0 || r == 0x1680 || r >= 0x2000 && r <= 0x200A || r == 0x2028 || r == 0x2029 || r == 0x202F || r == 0x205F || r == 0x3000 || r == 0xFEFF
+	}) != "" && runcontext.U16Length(s) <= n
+}
 func validateChatPlan(data json.RawMessage) error {
 	var c struct {
 		Interaction string     `json:"interaction"`
@@ -35,6 +76,30 @@ func validateChatPlan(data json.RawMessage) error {
 	}
 	if err := json.Unmarshal(data, &c); err != nil {
 		return errors.New("Invalid saved plan.")
+	}
+	fields, fieldErr := assistantTestObject(data)
+	if fieldErr != nil {
+		return fieldErr
+	}
+	for key := range fields {
+		if (strings.EqualFold(key, "interaction") && key != "interaction") || (strings.EqualFold(key, "plans") && key != "plans") {
+			return errAssistantRunInvalid
+		}
+	}
+	// Storage retains legacy null/empty controls. Execution readers validate the
+	// original member separately before selecting a phase or consuming authority.
+	var planRows []json.RawMessage
+	if raw, ok := fields["plans"]; ok {
+		if jsonscalar.ValidateEscapes(raw) != nil {
+			return errAssistantRunInvalid
+		}
+		if err := readAssistantDialectCustody(raw, reflect.TypeOf([]chatPlan{})); err != nil {
+			return err
+		}
+		planRows, fieldErr = assistantChatArray(raw)
+		if fieldErr != nil {
+			return fieldErr
+		}
 	}
 	if c.Interaction != "" && c.Interaction != "plan" && c.Interaction != "work" {
 		return errors.New("Invalid planning phase.")
@@ -54,7 +119,11 @@ func validateChatPlan(data json.RawMessage) error {
 		if _, e := time.Parse(time.RFC3339Nano, p.CreatedAt); e != nil {
 			return errors.New("Invalid plan timestamp.")
 		}
-		if p.Status == "started" || p.Status == "accepted" || p.AcceptedAt != "" {
+		planFields, err := assistantTestObject(planRows[i])
+		if err != nil {
+			return err
+		}
+		if p.Status == "started" || p.Status == "accepted" || planFields["acceptedAt"] != nil {
 			if _, e := time.Parse(time.RFC3339Nano, p.AcceptedAt); e != nil {
 				return errors.New("Invalid plan acceptance.")
 			}
@@ -64,10 +133,8 @@ func validateChatPlan(data json.RawMessage) error {
 				return errors.New("Invalid plan step or question.")
 			}
 		}
-		for _, r := range p.References {
-			if !contains([]string{"file", "dialect"}, r.Kind) || !validPlanText(r.ID, 1024) || !planDigest.MatchString(r.Revision) {
-				return errors.New("Invalid plan reference.")
-			}
+		if !validAssistantPlanReferences(p.References) {
+			return errors.New("Invalid plan reference.")
 		}
 	}
 	return nil
@@ -83,6 +150,11 @@ func (s *Server) checkChatExecution(chat string) error {
 		return e
 	}
 	defer lock.Close()
+	return s.checkChatExecutionLocked(chat)
+}
+
+// Caller holds the conversation/private-data lock through its admission commit.
+func (s *Server) checkChatExecutionLocked(chat string) error {
 	store, e := s.openChatData()
 	if e != nil {
 		return e
@@ -103,16 +175,36 @@ func (s *Server) checkChatExecution(chat string) error {
 		return e
 	}
 	var doc struct {
-		Chats []struct {
-			ID          string `json:"id"`
-			Interaction string `json:"interaction"`
-		} `json:"chats"`
+		Chats []json.RawMessage `json:"chats"`
 	}
 	if e = json.Unmarshal(b, &doc); e != nil {
 		return e
 	}
-	for _, c := range doc.Chats {
-		if c.ID == chat && c.Interaction == "plan" {
+	for _, raw := range doc.Chats {
+		var c struct {
+			ID          string          `json:"id"`
+			Interaction json.RawMessage `json:"interaction"`
+			Plans       []chatPlan      `json:"plans"`
+		}
+		if json.Unmarshal(raw, &c) != nil {
+			return errAssistantRunInvalid
+		}
+		if c.ID != chat {
+			continue
+		}
+		phase, err := assistantChatPhase(c.Interaction)
+		if err != nil {
+			return err
+		}
+		if len(c.Plans) > 0 {
+			plan := c.Plans[len(c.Plans)-1]
+			if plan.Status == "accepted" || plan.Status == "started" {
+				if err := s.checkCurrentAssistantPlan(raw, plan); err != nil {
+					return err
+				}
+			}
+		}
+		if phase == "plan" {
 			return errors.New("This chat is in Plan mode. Review its plan and choose Start work before requesting an operation.")
 		}
 	}
