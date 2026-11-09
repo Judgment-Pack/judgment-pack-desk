@@ -1,0 +1,15 @@
+{
+  "facts": {"Fact":false,"fact":null,"zero":0,"number":9007199254740993.00,"exponent":1e+2,"literal":"50","nested":[{"Fact":false,"fact":null}]},
+  "evidence": {"Fact":false,"fact":null},
+  "pack": {
+    "specVersion":"0.2.0-draft",
+    "id":"https://example.invalid/typed-admission",
+    "version":"1.0.0",
+    "decision":{"intent":"Review supplied facts","question":"Ready?"},
+    "outcomes":[{"id":"ready","label":"Ready"}],
+    "rules":[
+      {"id":"upper","when":{"op":"fact","path":"/Fact","operator":"equals","value":{"Fact":false,"fact":null,"zero":0,"number":50,"literal":"50"}},"outcome":"ready","description":"Upper fact","onUnknown":"escalate"},
+      {"id":"lower","when":{"op":"fact","path":"/fact","operator":"equals","value":0},"outcome":"ready","description":"Lower fact","onUnknown":"escalate"}
+    ]
+  }
+}

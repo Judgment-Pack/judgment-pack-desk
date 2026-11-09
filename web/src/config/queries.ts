@@ -50,6 +50,7 @@ export const DESK_CONFIG_QUERY_KEY = ['desk-config'] as const
 
 /** What `GET /api/desk-config` answers. Absence is a 200, not a 404. */
 interface DeskLevelAnswer {
+  promptPolicy?: {projectInstructionsBytes?:unknown}
   builds?: ComponentBuilds
   localGateway?: LocalGatewayStatus
   path: string
@@ -139,6 +140,8 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
       readFailure: { reason: messageOf(cause), responseReceived: false, source: 'browser' }
     }
   }
+  const limit=answered.promptPolicy?.projectInstructionsBytes
+  const promptPolicy=typeof limit==='number'&&Number.isSafeInteger(limit)&&limit>0?{projectInstructionsBytes:limit}:undefined
   if (!answered.present || answered.content === undefined) {
     return {
       path: answered.path,
@@ -149,6 +152,7 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
       sha256: answered.sha256 ?? '',
       chassis: chassisPaths(answered),
       localGateway: answered.localGateway,
+      promptPolicy,
       note: `no desk-level configuration file at ${answered.path}`
     }
   }
@@ -157,7 +161,8 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
     present: true,
     sha256: answered.sha256 ?? '',
     chassis: chassisPaths(answered),
-      localGateway: answered.localGateway,
+    localGateway: answered.localGateway,
+    promptPolicy,
     // The bytes, carried alongside the decode. Admin quotes a member out of
     // them rather than re-serialising what the decode produced.
     text: answered.content,
@@ -178,7 +183,7 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
   // Both files, and neither read waits on the other: they are two independent
   // questions to the same chassis, and a slow one should not delay the other.
   const deskLevel = loadDeskLevelConfig(signal)
-  const profile = loadAssistantProfile(signal)
+  const profile = loadAssistantProfile(signal,deskLevel.then(desk=>desk.promptPolicy?.projectInstructionsBytes))
   // **The whole answer, digest included.** Only the bytes were kept, and the
   // digest is what a write states as the bytes it replaces — so a card that
   // saves one member of this file has to carry it from the read that produced
@@ -257,10 +262,10 @@ export function useDeskConfig(): UseQueryResult<EffectiveConfig, Error> {
   })
 }
 
-export async function loadAssistantProfile(signal?: AbortSignal): Promise<AssistantProfileRead> {
+export async function loadAssistantProfile(signal?: AbortSignal, projectInstructionsBytes?:number|Promise<number|undefined>): Promise<AssistantProfileRead> {
   let file: FileContent
   try { file=await readFile(ASSISTANT_PROFILE_PATH,signal) }
   catch(error){return error instanceof FileRequestError&&error.status===404 ? {present:false,sha256:''} : {present:false,problem:PROFILE_PROBLEM}}
-  try { return {present:true,sha256:file.sha256,text:file.content,value:decodeAssistantProfile(file.content)} }
+  try { return {present:true,sha256:file.sha256,text:file.content,value:decodeAssistantProfile(file.content,await projectInstructionsBytes)} }
   catch { return {present:true,sha256:file.sha256,text:file.content,problem:PROFILE_PROBLEM} }
 }

@@ -232,7 +232,7 @@ func reviewedInputRealGatewayRunner(t *testing.T, published bool) {
 	if script := os.Getenv("JPS_INPUT_REVIEW_BROWSER"); script != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "/home/onword/.nvm/versions/node/v22.23.1/bin/node", script, ts.URL, saved.Document.ID, testToken)
+		cmd := exec.CommandContext(ctx, "node", script, ts.URL, saved.Document.ID, testToken)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("browser: %s %v", out, err)
 		} else {
@@ -364,7 +364,7 @@ func reviewedInputRealGatewayRunner(t *testing.T, published bool) {
 
 func TestGeneratedConversionsKeepUnresolvedFieldsUnknown(t *testing.T) {
 	q := qualificationFixture()
-	q.Mapping.Case.Facts = []inputDialectFact{{"/count", "/values/count"}, {"/flag", "/values/flag"}, {"/stale", "/values/stale"}, {"/missing", "/values/missing"}}
+	q.Mapping.Case.Facts = []inputDialectFact{{Target: "/count", Source: "/values/count"}, {Target: "/flag", Source: "/values/flag"}, {Target: "/stale", Source: "/values/stale"}, {Target: "/missing", Source: "/values/missing"}}
 	q.Conversions = map[string]inputConversion{"/count": {Kind: "number"}, "/flag": {Kind: "boolean", TrueValue: "true", FalseValue: "false"}}
 	record := preparedInputRecord{ID: "row", Class: "generated", Values: map[string]string{"count": "0", "flag": "false", "stale": "old", "missing": ""}, Research: &inputResearchRecord{Entity: inputResearchEntity{Fields: map[string]inputResearchValue{"count": {Status: "interpretation"}, "flag": {Status: "interpretation"}, "stale": {Status: "stale"}, "missing": {Status: "missing"}}}}}
 	row, err := prepareInputRecord(inputPreparation{Recipe: inputRecipe{Qualification: q}}, record)

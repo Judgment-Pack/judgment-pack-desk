@@ -722,16 +722,25 @@ func (s *Server) handleUpgradeConfirm(w http.ResponseWriter, r *http.Request) {
 // every file back and removes the key; where the files could not be put back,
 // the key and its marker stay for the next start, which keeps the key only
 // where jpack.json names it (startup_key.go).
-func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {
+func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (answer any, failure *lockFailure) {
 	stale := &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed the upgrade, so nothing was written. Review it again."}
 	// **This project's lock, from before the fresh reading to the last file
 	// put back** (issue #284), released last, after the key's and the held
 	// folders'.
-	unlock, failure := s.lockProjectFor(ctx, "an upgrade", "written")
+	projectLease, failure := s.lockProjectForOwned(ctx, "an upgrade", "written")
 	if failure != nil {
 		return nil, failure
 	}
-	defer unlock()
+	defer func() {
+		if closeErr := projectLease.Close(); closeErr != nil {
+			answer = nil
+			if failure == nil {
+				failure = &lockFailure{http.StatusInternalServerError, CodeInternal, "The project operation could not finish releasing its lock. Inspect the current state before trying again."}
+			} else {
+				failure.message += " The project lock could not be closed."
+			}
+		}
+	}()
 	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
 	if err != nil {
 		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was written: " + strings.TrimRight(err.Error(), ".") + "."}
@@ -852,7 +861,7 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 	if made := undo.identity; made != nil && made.record.From != "" {
 		s.finishStartupMove(made.root, made.record, made.info)
 	}
-	if err := s.storeReviewedCopies(plan.upgraded); err != nil {
+	if err := s.storeReviewedCopiesWithCreator(plan.upgraded, projectLease); err != nil {
 		s.log.Printf("desk: the reviewed copies were not stored: %v", err)
 		result.Copies, result.CopiesProblem = "not-stored", err.Error()
 	}

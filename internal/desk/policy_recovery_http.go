@@ -163,7 +163,9 @@ func (s *Server) policyRecoveryDestination(destination string) (*ProjectRoot, st
 
 func (s *Server) policyRecoveryProtectedChatPaths() ([]string, error) {
 	paths := []string{s.defaultChatDataPath()}
-	lock, err := s.privateDataLockContext(context.Background(), false)
+	// Only the saved chat-store location is read here, never history: the
+	// settings-only short lock does not demand first-use history enrollment.
+	lock, err := s.privateDataSettingsLockContext(context.Background(), false)
 	if err != nil {
 		return nil, err
 	}

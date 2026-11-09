@@ -26,6 +26,7 @@ import type { AssistantKeyState } from './client'
 import { EndpointForm } from './EndpointForm'
 import { AIConnectionScope, type AIConnection } from './aiConnections'
 import { PREFILLED_URL } from './endpointDraft'
+import {giveThisPageASessionForTesting} from '../mcp/session'
 
 afterEach(() => {
   cleanup()
@@ -517,7 +518,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
             )
         }
       }
-      if (!url.includes('/api/assistant/relay/')) {
+      if (!url.includes('/api/assistant/models')) {
         return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
       }
       return new Response(JSON.stringify(listing), {
@@ -548,7 +549,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
   /** Press it, once the key read has answered and the button is offered. */
   const test = async () =>
     await testConnection()
-  const relayed = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/relay/'))
+  const metadataRequests = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/models'))
   const probed = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/probe'))
 
   it('reads down in the order somebody sets one of these up', async () => {
@@ -618,8 +619,8 @@ describe('Test connection: the probe and the listing, in one press', () => {
     )
     await test()
     await waitFor(() => expect(probed(seen.urls)).toHaveLength(1))
-    await waitFor(() => expect(relayed(seen.urls)).toHaveLength(1))
-    for (const url of [probed(seen.urls)[0]!, relayed(seen.urls)[0]!]) {
+    await waitFor(() => expect(metadataRequests(seen.urls)).toHaveLength(1))
+    for (const url of [probed(seen.urls)[0]!, metadataRequests(seen.urls)[0]!]) {
       const headers = new Headers(seen.inits[seen.urls.indexOf(url)]!.headers)
       expect(headers.get('X-Assistant-Connection'), url).toBe(connection.id)
       expect(headers.get('X-Assistant-Revision'), url).toBe(connection.revision)
@@ -632,7 +633,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     const seen = servesCheck(LISTED)
     renderForm(GEMINI, true)
     await screen.findByRole('button', { name: 'Test connection' })
-    expect(relayed(seen.urls)).toHaveLength(0)
+    expect(metadataRequests(seen.urls)).toHaveLength(0)
     expect(probed(seen.urls)).toHaveLength(0)
   })
 
@@ -640,11 +641,14 @@ describe('Test connection: the probe and the listing, in one press', () => {
     const seen = servesCheck(LISTED)
     renderForm(GEMINI, true)
     await test()
-    await waitFor(() => expect(relayed(seen.urls)).toHaveLength(1))
+    await waitFor(() => expect(metadataRequests(seen.urls)).toHaveLength(1))
     await waitFor(() => expect(probed(seen.urls)).toHaveLength(1))
-    // The listing is a suffix through the relay; the probe carries nothing.
-    expect(relayed(seen.urls)[0]).toContain('/api/assistant/relay/v1/v1beta/models')
-    expect(relayed(seen.urls)[0]).not.toContain('api.example.invalid')
+    // Both fixed actions carry no caller destination or request body.
+    expect(metadataRequests(seen.urls)[0]).toBe('/api/assistant/models')
+    const metadataInit = seen.inits[seen.urls.indexOf(metadataRequests(seen.urls)[0]!)]!
+    expect(metadataInit.method).toBe('POST')
+    expect(metadataInit.body).toBeUndefined()
+    expect(metadataRequests(seen.urls)[0]).not.toContain('api.example.invalid')
     expect(probed(seen.urls)[0]).not.toContain('api.example.invalid')
   })
 
@@ -717,7 +721,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     expect(await screen.findByText('Choose a model to test this provider.')).toBeTruthy()
     // And nothing at all left this page.
     expect(probed(seen.urls)).toHaveLength(0)
-    expect(relayed(seen.urls)).toHaveLength(0)
+    expect(metadataRequests(seen.urls)).toHaveLength(0)
   })
 
   it('is disabled before there is an endpoint saved and a key stored', async () => {
@@ -767,7 +771,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     // The button is back, and nothing was asked in the meantime.
     expect(await screen.findByRole('button', { name: 'Test connection' })).toBeTruthy()
     expect(screen.queryByText(/models available/)).toBeNull()
-    expect(relayed(seen.urls)).toHaveLength(1)
+    expect(metadataRequests(seen.urls)).toHaveLength(1)
   })
 
   it('does not test automatically after saving a key', async () => {
@@ -779,7 +783,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     typeKey('sk-a-key')
     saveApiKey()
     await screen.findByText('API key saved on this computer.')
-    expect(relayed(seen.urls)).toHaveLength(0)
+    expect(metadataRequests(seen.urls)).toHaveLength(0)
     expect(probed(seen.urls)).toHaveLength(0)
   })
 })
@@ -803,7 +807,7 @@ describe('Models: the set, the default, and an id nobody listed', () => {
             JSON.stringify({ reachable: true, status: 200, latencyMs: 12, diagnostic: '' })
         }
       }
-      if (!url.includes('/api/assistant/relay/')) {
+      if (!url.includes('/api/assistant/models')) {
         return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
       }
       return new Response(JSON.stringify(listing), {
@@ -1262,7 +1266,7 @@ describe('the narration guard, over the states only the form can reach', () => {
             JSON.stringify({ reachable: true, status: 200, latencyMs: 12, diagnostic: '' })
         }
       }
-      if (url.includes('/api/assistant/relay/')) {
+      if (url.includes('/api/assistant/models')) {
         return new Response(
           JSON.stringify({ data: [{ id: 'a-listed-model' }, { id: 'a-second-listed-model' }] }),
           { status: 200, headers: { 'content-type': 'application/json' } }
@@ -1377,7 +1381,7 @@ describe('API key save and connection readiness', () => {
         requests++
         return new Promise<Response>((resolve) => { probe = resolve })
       }
-      if (url.includes('/api/assistant/relay/')) {
+      if (url.includes('/api/assistant/models')) {
         requests++
         return new Promise<Response>((resolve) => { listing = resolve })
       }
@@ -1520,15 +1524,21 @@ describe('the header form, the plain address on this network, and what an endpoi
     expect(rows).toEqual([['Context window', '65536 tokens', 'yours'], ['Native tool calls', 'No', 'probe']])
   })
 
-  it('probes the saved endpoint with one small request through the relay, keeps what it found with the time, and writes it on save', async () => {
+  it('probes the saved endpoint through canonical Observe, keeps draft findings, and writes them only on save', async () => {
+    giveThisPageASessionForTesting('capability-fixture')
+    let requestId = ''
+    const run = () => ({admissionId:`settings-observation-${requestId}`,id:'arun_'+'d'.repeat(32),owner:{kind:'settings-observation',id:'legacy-api',revision:'c'.repeat(64)},requestId,revision:1,state:'complete',operations:[],events:[],cursor:'1:0'})
     const urls: { url: string; method: string; body?: string }[] = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
       urls.push({ url, method: init?.method ?? 'GET', body: init?.body as string | undefined })
       if (url.includes('/api/assistant/key')) return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(keyAnswer) }
-      if (url.includes('/api/assistant/relay/v1/chat/completions')) {
-        return Response.json({ choices: [{ message: { tool_calls: [{ id: 'a', type: 'function', function: { name: 'probe_echo', arguments: '{"value":1}' } }] } }] })
+      if (url.includes('/api/assistant-observations/reference')) {
+        requestId = JSON.parse(String(init?.body)).requestId
+        return Response.json({start:{admissionId:`settings-observation-${requestId}`,purpose:'settings-observation',ownerId:'legacy-api',revision:'c'.repeat(64),requestId,observation:{kind:'capability',model:'a-model'}}})
       }
-      if (url.includes('/api/assistant/relay/v1/models')) return Response.json({ data: [{ id: 'a-model', max_model_len: 32768 }] })
+      if (url.endsWith('/api/assistant-runs')) return Response.json(run())
+      if (url.endsWith('/settings-observation')) return Response.json({kind:'capability',observeSucceeded:true,capability:{ok:true,findings:{at:'2026-10-28T12:00:00Z',facts:{nativeToolCalls:true,parallelToolCalls:false},unknown:['context window','vision','reasoning','tool-schemas','turn order']}}})
+      if (url.includes('/api/assistant/models')) return Response.json({data:[{id:'a-model',max_model_len:32768}]})
       return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
     })
     renderForm(OPEN)
@@ -1536,9 +1546,11 @@ describe('the header form, the plain address on this network, and what an endpoi
     await waitFor(() => expect(probeButton.disabled).toBe(false))
     fireEvent.click(probeButton)
     expect(await screen.findByText(/^Probed 20\d\d-/)).toBeTruthy()
-    const chat = urls.filter((request) => request.url.includes('/relay/v1/chat/completions'))
-    expect(chat).toHaveLength(1)
-    expect(JSON.parse(chat[0]!.body!)).toMatchObject({ model: 'a-model', stream: false, max_tokens: 128 })
+    expect(urls.some(request=>request.url.includes('/relay/'))).toBe(false)
+    const starts = urls.filter(request=>request.url.endsWith('/api/assistant-runs'))
+    expect(starts).toHaveLength(1)
+    expect(JSON.parse(starts[0]!.body!)).toMatchObject({purpose:'settings-observation',observation:{kind:'capability',model:'a-model'}})
+    expect(urls.some(request=>request.method==='PUT')).toBe(false)
     const table = screen.getByRole('table', { name: 'What the assistant will assume' })
     expect(table.textContent).toContain('32768 tokens')
     expect(table.textContent).toContain('probe')

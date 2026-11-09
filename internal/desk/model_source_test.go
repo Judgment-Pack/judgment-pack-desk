@@ -340,7 +340,8 @@ func TestModelSourceSharedExecutorAndRunnerPreparation(t *testing.T) {
 		t.Fatalf("registration was not idempotent: %s %s %v", profileRaw, again, err)
 	}
 	task := backgroundFixture(choice)
-	request, cleanup, err := s.localGateway.modelSource.register(context.Background(), choice, []byte(task.Prompt), func(ctx context.Context) (json.RawMessage, error) { return s.runBackgroundModel(ctx, task, nil) })
+	fixtureCtx := backgroundFixtureContext(t, &task)
+	request, cleanup, err := s.localGateway.modelSource.register(fixtureCtx, choice, []byte(task.Prompt), func(ctx context.Context) (json.RawMessage, error) { return s.runBackgroundModel(ctx, task, nil) })
 	if err != nil {
 		t.Fatal(err)
 	}

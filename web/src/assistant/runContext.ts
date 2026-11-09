@@ -28,8 +28,11 @@ export function runtimeIdentityOf(connection: object, call: CallTool): Promise<R
     known = (async () => {
       try {
         const identity = await runtimeCheckIdentity(call)
-        if (!reusableRuntime(identity)) return undefined
         const version = (JSON.parse(identity) as { tool: { version: string } }).tool.version
+        // Preserve malformed versions for Agent's typed admission refusal,
+        // including dev-like spellings that would otherwise become unavailable.
+        const malformed = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(version)
+        if (!malformed && !reusableRuntime(identity)) return undefined
         return { identity: await digestOf(identity), version }
       } catch {
         return undefined

@@ -64,6 +64,8 @@ export interface FileEditing {
    * about to be argued with, and say why.
    */
   reloading: boolean
+  /** Synchronous reload latch, including a request claimed before the next render. */
+  isReloading: () => boolean
   /** The read-back is byte for byte what was sent. */
   verified: boolean
   /**
@@ -115,6 +117,8 @@ export function useFileEditing(): FileEditing {
     undefined
   )
   const [reloading, setReloading] = useState(false)
+  const reloadPending = useRef(false)
+  const isReloading = useCallback(() => reloadPending.current, [])
   // Only the last reload asked for counts. An earlier one resolving afterwards
   // is answering a question that has been replaced.
   const reloads = useRef(0)
@@ -131,6 +135,7 @@ export function useFileEditing(): FileEditing {
   const reload = useCallback(
     (path: string, onLoaded: (fresh: FileContent) => boolean) => {
       const ticket = (reloads.current += 1)
+      reloadPending.current = true
       setReloadError(undefined)
       setReloading(true)
       // **The conflict stands until the read lands.** Clearing it first left a
@@ -143,6 +148,7 @@ export function useFileEditing(): FileEditing {
       void readFile(path)
         .then((fresh) => {
           if (ticket !== reloads.current) return
+          reloadPending.current = false
           setReloading(false)
           // **The buffer decides first.** Resetting the mutation and dropping
           // the verdict before asking made a refused reload destructive in the
@@ -157,6 +163,7 @@ export function useFileEditing(): FileEditing {
         })
         .catch((cause: unknown) => {
           if (ticket !== reloads.current) return
+          reloadPending.current = false
           setReloading(false)
           setReloadError({
             path,
@@ -258,7 +265,7 @@ export function useFileEditing(): FileEditing {
   // after the rename, and this compares that to the bytes that were sent.
   const verified = outcome !== undefined && outcome.landed.content === outcome.submitted
 
-  return { write, outcome, reloadError, reloading, verified, save, reload, reset }
+  return { write, outcome, reloadError, reloading, isReloading, verified, save, reload, reset }
 }
 
 /** The listing with one entry replaced, or added where it was not there. */

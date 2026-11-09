@@ -72,7 +72,7 @@ func newExchangeResearchInstallationFor(t *testing.T, name, runtime, runner, bun
 	installation.reply.Store("")
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		installation.calls.Add(1)
-		if r.URL.Path != "/v1beta/models/"+exchangeAcceptanceModel+":generateContent" {
+		if r.URL.Path != "/v1beta/models/"+exchangeAcceptanceModel+":streamGenerateContent" {
 			t.Errorf("declared model route changed: %s", r.URL.Path)
 		}
 		reply := installation.reply.Load().(string)

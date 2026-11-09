@@ -42,13 +42,21 @@ const inputPreparationCountLimit = 100
 
 type fileInputPreparationRepository struct {
 	open func(create bool) (*os.Root, error)
+	// Optional checked noncreating owner opener. Ordinary Get/Read/Put paths
+	// are unchanged; raw export cannot fall back to their older opener.
+	rawOpen  func() (*os.Root, bool, error)
+	rawOwner *storageBudgetOwner // existing test faults only, never read authority
 }
 
 func (s *Server) preparationRepository() inputPreparationRepository {
 	if s.inputPreparations != nil {
 		return s.inputPreparations
 	}
-	return fileInputPreparationRepository{open: s.openInputPreparations}
+	var owner *storageBudgetOwner
+	if s.storageConstruction != nil {
+		owner = s.storageConstruction.owner
+	}
+	return fileInputPreparationRepository{open: s.openInputPreparations, rawOpen: s.openInputPreparationRaw, rawOwner: owner}
 }
 
 func (f fileInputPreparationRepository) locked(ctx context.Context, write bool, use func(*os.Root) error) error {

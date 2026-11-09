@@ -17,6 +17,15 @@ import (
 	"time"
 )
 
+// WithScratchObserver exposes only a freshly created owned temporary root. The
+// callback releases its read-only borrow before cleanup; local catalogs never
+// enter this hook. It cannot change Git arguments or grant an operation.
+func WithScratchObserver(ctx context.Context, observe func(*os.Root) func()) context.Context {
+	return context.WithValue(ctx, scratchObserverKey{}, observe)
+}
+
+type scratchObserverKey struct{}
+
 // OpenRelease resolves one explicit tag and reads only blobs at that commit.
 // It never checks out or executes catalog files. All commands have bounded
 // output and time; prompts, hooks, external protocols and user Git config are off.
@@ -36,7 +45,18 @@ func OpenRelease(ctx context.Context, location, tag string) (*GitTree, func(), e
 		}
 		tree.directory = temp
 		tree.remote = location
-		close = func() { os.RemoveAll(temp) }
+		release := func() {}
+		if observe, ok := ctx.Value(scratchObserverKey{}).(func(*os.Root) func()); ok {
+			if root, err := os.OpenRoot(temp); err == nil {
+				if done := observe(root); done != nil {
+					release = done
+				}
+				root.Close()
+			} else if done := observe(nil); done != nil {
+				release = done
+			}
+		}
+		close = func() { release(); os.RemoveAll(temp) }
 		if _, e = tree.git(ctx, 4096, "init", "--bare", "--quiet"); e != nil {
 			close()
 			return nil, func() {}, e

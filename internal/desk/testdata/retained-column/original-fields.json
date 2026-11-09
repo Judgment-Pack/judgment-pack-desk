@@ -1,0 +1,13 @@
+[
+  {"name":"text_value","description":"Original empty text","type":"text"},
+  {"name":"integer_value","description":"Original signed zero integer","type":"integer"},
+  {"name":"decimal_value","description":"Original exact small decimal","type":"decimal"},
+  {"name":"boolean_value","description":"Original false boolean","type":"boolean"},
+  {"name":"text_list_value","description":"Original ordered text list","type":"text-list"},
+  {"name":"range_value","description":"Original exact decimal range","type":"range"},
+  {"name":"legacy_string_value","description":"Original legacy string supported by the retained fixture page","type":"string"},
+  {"name":"legacy_number_value","description":"Original legacy number spelling","type":"number"},
+  {"name":"missing_value","description":"Original omitted missing value","type":"text"},
+  {"name":"null_value","description":"Original explicit null inaccessible value","type":"text"},
+  {"name":"stale_value","description":"Original stale value remains in the unfiltered record","type":"text"}
+]

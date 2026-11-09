@@ -35,17 +35,15 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 	defer root.Close()
 	// Serialize all admissions across windows and processes before locking a
 	// run or preparation. The worker never takes this admission lock.
+	var admitted folderCreation
 	if r.Method != "GET" {
-		admission, err := root.Open(".")
+		admission, how, err := s.lockResearchAdmission(root)
 		if err != nil {
 			fail(err)
 			return
 		}
 		defer admission.Close()
-		if err = lockPrivateData(admission, true); err != nil {
-			fail(errors.New("Another research change is being saved. Try again after it finishes."))
-			return
-		}
+		admitted = how
 	}
 	if id != "" {
 		runRoot, e := openInputResearch(root, id, false)
@@ -308,7 +306,7 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 		fail(errors.New("This project has reached its retained research-run limit."))
 		return
 	}
-	if e = s.writeResearchReview(r.Context(), root, run, nil); e != nil {
+	if e = s.writeResearchReview(r.Context(), root, run, nil, admitted); e != nil {
 		fail(e)
 		return
 	}

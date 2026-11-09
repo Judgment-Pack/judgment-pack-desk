@@ -87,9 +87,13 @@ def main():
         tmp = Path(tmp); bundle = tmp / 'bundle'; bundle.mkdir()
         components.verify_plan(plan)
         published.install(plan, os_name + '/' + arch, bundle, tmp / 'downloads')
-        env = dict(os.environ, CGO_ENABLED='0', GOWORK='off', GOOS=os_name, GOARCH=arch)
+        # published.install has authenticated the companion archive and installed
+        # these exact per-platform bytes. Do not use adjacent descriptive metadata.
+        runtime_digest = hashlib.sha256((bundle / 'jpack').read_bytes()).hexdigest()
+        # Darwin storage identity requires the native cgo bridge on both release architectures.
+        env = dict(os.environ, CGO_ENABLED='1' if os_name == 'darwin' else '0', GOWORK='off', GOOS=os_name, GOARCH=arch)
         run(['npm', '--prefix', 'web', 'run', 'build'])
-        run(['go', 'build', '-trimpath', '-ldflags', '-X github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan.Version=' + args.version, '-o', str(bundle / 'jpack-desk'), '.'], env=env)
+        run(['go', 'build', '-trimpath', '-ldflags', '-X github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan.Version=' + args.version + ' -X github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan.runtimeArtifactSHA256=' + runtime_digest, '-o', str(bundle / 'jpack-desk'), '.'], env=env)
         notices = bundle / 'desk-licenses'
         notices.mkdir(parents=True)
         shutil.copyfile(ROOT / 'LICENSE', notices / 'LICENSE')

@@ -96,6 +96,9 @@ type jobsCompanion struct {
 	// Isolated fixtures proxy this inherited socket to delay/drop a reply after
 	// its durable transaction; the actual Runner and Runtime remain unchanged.
 	authoritySocketForTest func() (net.Conn, *os.File, error)
+	// folders is how the Desk that made this companion makes its missing
+	// private folders (Server.creation).
+	folders folderCreation
 }
 
 func (s *Server) initJobs() {
@@ -124,7 +127,7 @@ func (s *Server) initJobs() {
 		s.log.Printf("desk: Jobs retained namespace is unavailable")
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: location.Dir, workspace: location.Workspace, owner: location.Owner, stop: make(chan struct{})}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: location.Dir, workspace: location.Workspace, owner: location.Owner, stop: make(chan struct{}), folders: s.creation(nil)}
 	if s.policyAuthorityMachine != nil {
 		ownership, e := s.policyAuthorityMachine.executorForProject(s.project, s.jobs.workspace)
 		s.jobs.ownership, s.jobs.held = ownership, e
@@ -153,23 +156,25 @@ func (s *Server) initJobs() {
 	s.jobs.key = s.newRunnerKey(s.jobs.workspace)
 	s.jobs.started = make(chan struct{})
 	// Resume durable queued work when Desk starts, without requiring an open tab.
-	go func() {
+	// This worker belongs to the companion created above. Fixtures may replace
+	// the server's request-facing pointer with a proxy; the worker keeps its owner.
+	go func(j *jobsCompanion) {
 		select {
-		case <-s.jobs.started:
-		case <-s.jobs.stop:
+		case <-j.started:
+		case <-j.stop:
 			return
 		}
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
-			_, _, _ = s.jobs.endpoint()
+			_, _, _ = j.endpoint()
 			select {
-			case <-s.jobs.stop:
+			case <-j.stop:
 				return
 			case <-ticker.C:
 			}
 		}
-	}()
+	}(s.jobs)
 }
 func (j *jobsCompanion) endpoint() (string, string, error) {
 	j.mu.Lock()
@@ -198,11 +203,14 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 			return j.url, j.token, nil
 		}
 	}
+	if err := j.validateRunnerPaths(); err != nil {
+		return "", "", j.holdOwned(err)
+	}
 	if !filepath.IsAbs(j.bin) || !filepath.IsAbs(j.runtime) {
 		return "", "", j.holdOwned(errors.New("absolute runner and Runtime paths required"))
 	}
 	if j.ownership != nil {
-		root, err := openPrivateDataRoot(j.dir, true)
+		root, err := openPrivateDataRootBy(j.dir, true, j.folders)
 		if err != nil {
 			return "", "", j.holdOwned(runnerOwnershipUnavailable())
 		}
@@ -256,6 +264,12 @@ func (j *jobsCompanion) holdOwned(err error) error {
 // did not start, and what it wrote to its standard error says it refused a
 // signing key, refusal is its reason.
 func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *string, err error) {
+	if err := j.validateRunnerPaths(); err != nil {
+		return nil, err
+	}
+	if err := validateRunnerPathFields(signingKey); err != nil {
+		return nil, err
+	}
 	bin := j.bin
 	cleanup := func() {}
 	if j.ownership != nil {

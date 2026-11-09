@@ -120,13 +120,19 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 	defer settings.Close()
 	data, err := readPrivateData(settings, dataLocationName, 16<<10)
 	if errors.Is(err, os.ErrNotExist) {
+		// Budgeted demand is enrolled before taking the private transaction.
+		// A direct or already-held caller cannot create an unaccounted default
+		// or upgrade this lock into original-owner enrollment authority.
+		if s.storageEnrollment != nil {
+			return nil, errStorageOwnerTransitionRequired
+		}
 		entries, err := storageEntries(settings)
 		if err != nil {
 			return nil, err
 		}
 		path := s.defaultChatDataPath()
 		for _, entry := range entries {
-			if conversationFileName.MatchString(entry.Name()) {
+			if conversationFileName.MatchString(entry.Name()) || assistantRunFileName.MatchString(entry.Name()) || assistantSourceFileName.MatchString(entry.Name()) {
 				if !s.containedDeskData() {
 					path = s.configDir
 				}
@@ -139,7 +145,7 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 			return nil, err
 		}
 		data = s.encodeDataLocation(location)
-		if err = writePrivateData(settings, dataLocationName, data); err != nil {
+		if err = s.writeDataLocation(settings, data); err != nil {
 			store.root.Close()
 			return nil, err
 		}
@@ -190,7 +196,7 @@ func (s *Server) openChatDataAt(location dataLocation, revision string, create b
 	if location.Path == s.configDir {
 		root, err = s.assistant.root.OpenRoot(".")
 	} else {
-		root, err = openPrivateDataRoot(location.Path, create)
+		root, err = openPrivateDataRootBy(location.Path, create, s.creation(nil))
 	}
 	if err != nil {
 		return nil, err
@@ -210,7 +216,7 @@ func (s *Server) openChatDataAt(location dataLocation, revision string, create b
 			return nil, errors.New("choose an empty folder for chat data; existing files will not be combined")
 		}
 		markerBytes, _ = json.Marshal(dataMarker{Version: 1, Owner: s.storageOwner()})
-		err = claimPrivateData(root, dataMarkerName, markerBytes)
+		err = s.claimDataMarker(root, markerBytes)
 	}
 	var marker dataMarker
 	if err == nil {
@@ -234,6 +240,9 @@ func pathContains(parent, child string) bool {
 func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 	status := storageStatus{Path: store.location.Path, RecommendedPath: s.defaultChatDataPath(), Revision: store.revision,
 		Legacy: store.legacy, PreviousPath: store.location.Previous, Scope: "personal", MaxMoveBytes: maxMoveBytes, MaxBackupBytes: maxBackupData}
+	if s.assistantRunRecoveryFailure() != nil {
+		status.Problem = errAssistantRunRecovery.Error()
+	}
 	entries, err := storageEntries(store.root)
 	if err != nil {
 		return status, err
@@ -262,11 +271,26 @@ func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 			status.ProjectCount++
 		}
 		status.Bytes += info.Size()
-		if entry.Name() == strings.Replace(recordName, "conversations-", "briefs-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "source-reviews-", 1) || entry.Name() == recordName || entry.Name() == draftPackName(recordName) || entry.Name() == strings.Replace(recordName, "conversations-", "pack-tests-", 1) || attachmentFileName.MatchString(entry.Name()) && strings.HasPrefix(entry.Name(), attachmentProjectPrefix(recordName)) {
+		if entry.Name() == strings.Replace(recordName, "conversations-", "assistant-source-approvals-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "assistant-runs-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "briefs-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "source-reviews-", 1) || entry.Name() == recordName || entry.Name() == draftPackName(recordName) || entry.Name() == strings.Replace(recordName, "conversations-", "pack-tests-", 1) || attachmentFileName.MatchString(entry.Name()) && strings.HasPrefix(entry.Name(), attachmentProjectPrefix(recordName)) {
 			status.ProjectBytes += info.Size()
 		}
 	}
 	return status, nil
+}
+
+// storageRecoveryRequired is whether err says the chat storage settings no
+// longer match what storage holds for them until the original owner
+// reconciles them: a refused or interrupted move left its pointer, or the
+// settings changed behind the Desk.
+func storageRecoveryRequired(err error) bool {
+	return errors.Is(err, errStorageOwnerTransitionRequired) || errors.Is(err, errStorageEnrollmentUnresolved) || errors.Is(err, errStorageOwnerRecovery)
+}
+
+// storageStatusRecovery answers the storage settings read in words while
+// storage recovery is required, as the read-only start does, instead of an
+// internal error.
+func storageStatusRecovery(w http.ResponseWriter) {
+	writeJSONCoded(w, http.StatusServiceUnavailable, storageStatusUnknown, "Chat storage settings are unavailable while storage recovery is required.")
 }
 
 func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
@@ -274,16 +298,32 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	if err := s.ensureDefaultHistoryEnrollment(r.Context()); err != nil {
+		if storageRecoveryRequired(err) {
+			storageStatusRecovery(w)
+			return
+		}
+		storageFailure(w, err)
+		return
+	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	lock, err := s.privateDataLockContext(r.Context(), true)
 	if err != nil {
+		if storageRecoveryRequired(err) {
+			storageStatusRecovery(w)
+			return
+		}
 		storageFailure(w, err)
 		return
 	}
 	defer lock.Close()
 	store, err := s.openChatData()
 	if err != nil {
+		if storageRecoveryRequired(err) {
+			storageStatusRecovery(w)
+			return
+		}
 		storageFailure(w, err)
 		return
 	}
@@ -301,6 +341,10 @@ func storageFailure(w http.ResponseWriter, err error) {
 	var failure *policyFailure
 	if errors.As(err, &failure) {
 		policyHTTPFailure(w, err)
+		return
+	}
+	if storageRecoveryRequired(err) && codeOf(err) == CodeInternal {
+		writeJSONCoded(w, http.StatusServiceUnavailable, storageStatusUnknown, "Chat storage is unavailable while storage recovery is required; restart Desk once what storage refused is fixed.")
 		return
 	}
 	writeJSONCoded(w, statusForRefusal(err), codeOf(err), "Chat storage: "+err.Error())
@@ -326,6 +370,15 @@ func (s *Server) handleStorageMove(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Choose an absolute folder path and reload storage settings before moving data.")
 		return
 	}
+	if s.storageEnrollment != nil {
+		status, e := s.withOriginalChatMove(r, request)
+		if e != nil {
+			storageFailure(w, e)
+		} else {
+			writeJSON(w, http.StatusOK, status)
+		}
+		return
+	}
 	s.changeChatStorage(w, r, request, copyChatData)
 }
 
@@ -335,7 +388,19 @@ func validMoveRequest(request moveChatData) bool {
 
 // Moves and restores share the same locked copy/verify/cutover protocol.
 func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, request moveChatData, copyData func(context.Context, *chatDataStore, *chatDataStore, *[]string) error) {
+	s.changeChatStorageUsingCustody(w, r, request, func(ctx context.Context, custody *chatStorageTransferCustody, copied *[]string) error {
+		return copyData(ctx, custody.source, custody.target, copied)
+	})
+}
+
+// The original storage transaction alone mints the live custody continuation.
+// All existing move/restore callers retain the wrapper and original protocol.
+func (s *Server) changeChatStorageUsingCustody(w http.ResponseWriter, r *http.Request, request moveChatData, copyData func(context.Context, *chatStorageTransferCustody, *[]string) error) {
 	if err := s.policyMachineTarget(request.Path); err != nil {
+		storageFailure(w, err)
+		return
+	}
+	if err := s.ensureDefaultHistoryEnrollment(r.Context()); err != nil {
 		storageFailure(w, err)
 		return
 	}
@@ -415,15 +480,30 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 		return
 	}
 	copied := []string{}
+	rollbackRoot := target.root
 	committed := false
 	defer func() {
 		if !committed {
 			for _, name := range copied {
-				_ = target.root.Remove(name)
+				_ = rollbackRoot.Remove(name)
 			}
 		}
 	}()
-	if err = copyData(r.Context(), store, target, &copied); err != nil {
+	if err = func() (copyErr error) {
+		// This concrete owner is born under these exact original locals and
+		// revoked before their cleanup and before storage-pointer activation.
+		custody := &chatStorageTransferCustody{server: s, request: r, work: work, private: lock, settings: settings, source: store, target: target}
+		custody.self = custody
+		if copyErr = custody.capture(); copyErr != nil {
+			return copyErr
+		}
+		custody.active = true
+		defer func() { copyErr = errors.Join(copyErr, custody.check(r.Context())); custody.active = false }()
+		if copyErr = custody.check(r.Context()); copyErr != nil {
+			return copyErr
+		}
+		return copyData(r.Context(), custody, &copied)
+	}(); err != nil {
 		storageFailure(w, err)
 		return
 	}
@@ -447,7 +527,7 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 		return
 	}
 	updated := s.encodeDataLocation(target.location)
-	if err = writePrivateData(settings, dataLocationName, updated); err != nil {
+	if err = s.writeDataLocation(settings, updated); err != nil {
 		// A rename may have landed before a read-back/fsync error. Retain the
 		// destination if it is authoritative; never delete its copied files.
 		landed, readErr := readPrivateData(settings, dataLocationName, 16<<10)
@@ -489,6 +569,12 @@ func copyChatData(ctx context.Context, source, target *chatDataStore, copied *[]
 		if err = validateStorageFile(name, data); err != nil {
 			return err
 		}
+		if assistantSourceFileName.MatchString(name) {
+			data, err = historicalAssistantSourceStorage(name, data)
+			if err != nil {
+				return err
+			}
+		}
 		total += int64(len(data))
 		if total > maxMoveBytes {
 			return withCode(CodeTooLarge, errors.New("chat data grew beyond the move limit"))
@@ -496,6 +582,11 @@ func copyChatData(ctx context.Context, source, target *chatDataStore, copied *[]
 		*copied = append(*copied, name)
 		if err = writePrivateData(target.root, name, data); err != nil {
 			return err
+		}
+		if assistantSourceFileName.MatchString(name) {
+			if err = readbackAssistantSourceStorage(target.root, name, data); err != nil {
+				return err
+			}
 		}
 	}
 	return validateStoredBindings(target.root)

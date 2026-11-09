@@ -9,7 +9,7 @@ import (
 func typedResearchFixture(t *testing.T, kind, raw string) (inputPreparation, preparedInputRecord) {
 	t.Helper()
 	q := qualificationFixture()
-	q.Mapping.Case.Facts = []inputDialectFact{{"/value", "/values/value"}}
+	q.Mapping.Case.Facts = []inputDialectFact{{Target: "/value", Source: "/values/value"}}
 	q.Mapping.Case.Evidence = nil
 	q.Conversions = map[string]inputConversion{"/value": {Kind: "research-value"}}
 	original := inputRecipe{Research: &inputResearchRecipe{Fields: []inputResearchField{{Name: "value", Type: kind}}}}

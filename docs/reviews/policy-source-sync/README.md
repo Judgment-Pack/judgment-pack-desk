@@ -34,8 +34,8 @@ Use only a fresh temporary project with separate `XDG_CONFIG_HOME`,
 built Desk with a compatible Runtime. The project's minimal `jpack.json` is
 `{"configVersion":"3","packs":{}}`. Use an installation that actually lacks
 the new source capability for the unsupported-control check. The parent runner
-can follow `/tmp/jps-policy-import-browser-run.py`, changing the Desk binary to
-`/tmp/jps-policy-source-desk-bin` and the smoke script to this directory.
+can follow `<scratch>/jps-policy-import-browser-run.py`, changing the Desk binary to
+`<scratch>/jps-policy-source-desk-bin` and the smoke script to this directory.
 
 With Node 22 and `web/node_modules/playwright-core` installed:
 
@@ -46,7 +46,7 @@ JPACK_POLICY_SOURCE_BROWSER_ISOLATED=1 \
 ```
 
 `CHROMIUM_BIN` optionally selects the local Chrome executable. In the current
-workspace Node 22 is `/home/onword/.nvm/versions/node/v22.23.1/bin/node` and Chrome
+workspace Node 22 is `$HOME/.nvm/versions/node/v22.23.1/bin/node` and Chrome
 is `/usr/bin/google-chrome`. The parent runs listeners/browser outside the
 restricted sandbox, inspects the evidence and stops the isolated listener.
 

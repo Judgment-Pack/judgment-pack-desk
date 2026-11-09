@@ -321,11 +321,62 @@ func holderText(value string, limit int) (string, bool) {
 // directory that was looked at. With create, a missing one is made
 // owner-only; made says whether the last one was. keeps names what Desk keeps
 // there, for a refusal's words. The root it answers is the caller's to close;
-// start is never closed.
-func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (root *os.Root, made bool, err error) {
+// start is never closed. A missing folder is made the storage line's way
+// (folderCreation's zero value); a Server makes its own with s.creation.
+func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (*os.Root, bool, error) {
+	return openOwnFolderBy(start, parts, create, keeps, folderCreation{})
+}
+
+// folderCreation is how a missing private folder is made. The zero value is
+// the storage line's: in the parent's creator window, taken for the making and
+// released (storageCooperatingDirectory), never waited for.
+type folderCreation struct {
+	// legacy makes it as v0.13.2 did, for a Desk with the storage line off:
+	// one Mkdir, and a folder another request made first is used as found.
+	// Without the line nothing reads a folder's creator window, so none is
+	// asked for, and a lock another request holds on the parent (the
+	// project's, a research admission) refuses nothing.
+	legacy bool
+	// lease is a creator window the caller already holds (with the line on):
+	// a folder made directly in the folder it holds is made under it,
+	// borrowed, instead of asking for it again, which its own hold would
+	// refuse. Deeper folders take their own.
+	lease *storageCreatorLease
+}
+
+// creation is how this Desk makes a missing private folder: v0.13.2's way
+// while the storage line is off, otherwise in the creator window, under
+// lease where the caller holds one.
+func (s *Server) creation(lease *storageCreatorLease) folderCreation {
+	return folderCreation{legacy: s.deskOwner().storageLineOff, lease: lease}
+}
+
+// makeFolder makes name in parent the way how says, for an opener that found
+// it missing. pending is the folder the creator window opened while it held
+// the parent, or nil where the caller opens name itself. made says whether
+// this call made it.
+func (how folderCreation) makeFolder(parent *os.Root, name string) (pending *os.Root, made bool, err error) {
+	if !how.legacy {
+		return storageCooperatingDirectory(context.Background(), parent, name, how.lease)
+	}
+	if err = parent.Mkdir(name, custodyDirMode); err == nil {
+		return nil, true, nil
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return nil, false, nil
+	}
+	return nil, false, err
+}
+
+// openOwnFolderBy is openOwnFolder with a missing folder made the way how
+// says.
+func openOwnFolderBy(start *os.Root, parts []string, create bool, keeps string, how folderCreation) (root *os.Root, made bool, err error) {
 	current := start
-	var opened *os.Root
+	var opened, pending *os.Root
 	defer func() {
+		if err != nil && pending != nil {
+			err = errors.Join(err, pending.Close())
+		}
 		if err != nil && opened != nil {
 			opened.Close()
 		}
@@ -334,11 +385,7 @@ func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (r
 		made = false
 		info, lookErr := current.Lstat(part)
 		if errors.Is(lookErr, fs.ErrNotExist) && create {
-			if lookErr = current.Mkdir(part, custodyDirMode); lookErr == nil {
-				made = true
-			} else if errors.Is(lookErr, fs.ErrExist) {
-				lookErr = nil
-			}
+			pending, made, lookErr = how.makeFolder(current, part)
 			if lookErr == nil {
 				info, lookErr = current.Lstat(part)
 			}
@@ -355,7 +402,11 @@ func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (r
 		if err := ownedByUs(part, info); err != nil {
 			return nil, false, err
 		}
-		next, openErr := current.OpenRoot(part)
+		next, openErr := pending, error(nil)
+		pending = nil
+		if next == nil {
+			next, openErr = current.OpenRoot(part)
+		}
 		if openErr != nil {
 			return nil, false, openErr
 		}
@@ -377,7 +428,7 @@ func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (r
 // `.desk-private/` may not be ignored yet, and what it holds names the
 // owner's counterparties.
 func (s *Server) openHandover(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(handoverDir, "/"), create, handoverKept)
+	root, made, err := openOwnFolderBy(s.root, strings.Split(handoverDir, "/"), create, handoverKept, s.creation(nil))
 	if err != nil {
 		return nil, err
 	}
@@ -392,10 +443,16 @@ func (s *Server) openHandover(create bool) (*os.Root, error) {
 
 // openHolderFolder opens a holder's own folder in the hand-over folder.
 func openHolderFolder(handover *os.Root, id string, create bool) (*os.Root, error) {
+	return openHolderFolderBy(handover, id, create, folderCreation{})
+}
+
+// openHolderFolderBy is openHolderFolder with a missing folder made the way
+// how says.
+func openHolderFolderBy(handover *os.Root, id string, create bool, how folderCreation) (*os.Root, error) {
 	if !holderIDForm.MatchString(id) {
 		return nil, errors.New("not a holder's id")
 	}
-	root, _, err := openOwnFolder(handover, []string{id}, create, handoverKept)
+	root, _, err := openOwnFolderBy(handover, []string{id}, create, handoverKept, how)
 	return root, err
 }
 
@@ -1233,7 +1290,7 @@ func (s *Server) recordHandover(id string, chain handoverChain, trail string, fr
 		return err
 	}
 	defer handover.Close()
-	folder, err := openHolderFolder(handover, id, true)
+	folder, err := openHolderFolderBy(handover, id, true, s.creation(nil))
 	if err != nil {
 		return err
 	}

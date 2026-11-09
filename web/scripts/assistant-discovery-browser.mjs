@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict'
+import {chromium} from 'playwright-core'
+const [origin, setupCode] = process.argv.slice(2)
+const browser = await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']})
+const page = await browser.newPage()
+page.setDefaultTimeout(15000)
+const requests=[], errors=[]
+page.on('pageerror', error=>errors.push(error.message))
+page.on('request', request=>{if(request.url().includes('/api/assistant/'))requests.push({url:request.url(),method:request.method(),body:request.postData(),headers:request.headers()})})
+try {
+ await page.goto(origin)
+ await page.getByRole('button',{name:'Set up sign-in',exact:true}).click()
+ await page.getByLabel('Owner setup code',{exact:true}).fill(setupCode)
+ await page.getByRole('button',{name:'Continue',exact:true}).click()
+ await page.getByRole('button',{name:'Set password',exact:true}).waitFor()
+ await page.goto(origin+'/admin#connections-ai')
+ await page.getByRole('button',{name:'Manage',exact:true}).click()
+ await page.getByRole('button',{name:'Test connection',exact:true}).click()
+ await page.getByText('Connected · 1 model available',{exact:true}).waitFor()
+ await page.getByRole('checkbox',{name:'fixture-chat Fixture Chat',exact:true}).waitFor()
+ assert.equal(await page.getByRole('checkbox',{name:/fixture-embedding/}).count(),0)
+ const listing=requests.filter(r=>r.url.endsWith('/api/assistant/models'))
+ assert.equal(listing.length,1)
+ assert.equal(listing[0].method,'POST')
+ assert.equal(listing[0].body,null)
+ assert.equal(listing[0].headers['x-assistant-connection'],'ai-111111111111111111111111')
+ assert(listing[0].headers['x-assistant-revision'])
+ assert.equal(requests.filter(r=>r.url.includes('/relay/')).length,0)
+ // Changing the form discards the observation without changing saved defaults.
+ await page.getByText('Advanced settings',{exact:true}).click()
+ await page.getByLabel('Endpoint URL',{exact:true}).fill('http://127.0.0.1:1')
+ await page.getByText('Connected · 1 model available',{exact:true}).waitFor({state:'hidden'})
+ assert.equal(await page.getByRole('checkbox',{name:'fixture-chat Fixture Chat',exact:true}).count(),0)
+ assert.deepEqual(errors,[])
+ console.log('assistant discovery browser: fixed action, saved revision, first page, Gemini filter and stale form passed')
+} finally {await browser.close()}

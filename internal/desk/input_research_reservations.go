@@ -1,6 +1,9 @@
 package desk
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+)
 
 var errResearchStorageLimit = errors.New("The saved-source storage limit leaves no room for another request. Save records from retained evidence.")
 
@@ -24,7 +27,22 @@ func researchReservedBytes(run inputResearchRun) int {
 // Admission and release happen under the journal lock; concurrent pages cannot
 // each spend the same free bytes. Fewer reads fit as storage fills.
 func reserveResearchSource(run *inputResearchRun, attempt *inputResearchAttempt) error {
+	if run.Portable != nil {
+		return reservePortableResearchJournal(run, attempt)
+	}
 	if attempt.Kind == "model" {
+		raw, err := json.Marshal(run)
+		if err != nil {
+			return err
+		}
+		allowance := portableResearchAttemptReserve + backgroundModelReceiptReserve
+		if len(raw)+researchReservedBytes(*run)+allowance > inputResearchRecordLimit {
+			return errPortableResearchJournalSize
+		}
+		if run.RetrievedBytes < 0 || run.RetrievedBytes+researchReservedBytes(*run)+allowance > inputResearchRetainedByteLimit {
+			return errResearchStorageLimit
+		}
+		attempt.ReservedBytes = allowance
 		return nil
 	}
 	allowance := inputResearchSourceProofLimit + (2 << 20)
@@ -33,4 +51,45 @@ func reserveResearchSource(run *inputResearchRun, attempt *inputResearchAttempt)
 	}
 	attempt.ReservedBytes = allowance
 	return nil
+}
+
+// Portable acquisitions live in the journal, including refused results. Measure
+// its actual encoding (raw JSON is compacted without HTML escaping), then reserve
+// a maximum retained result and terminal metadata for every admitted attempt.
+// A separate reserve covers the final answer and run state. Admission happens
+// under the same journal lock as the started attempt; no request spends it twice.
+const portableResearchAttemptReserve = (2 << 20) + (64 << 10)
+const portableResearchFinalReserve = portableResearchResponseLimit + (64 << 10)
+
+var errPortableResearchJournalSize = errors.New("The research journal storage limit leaves no room for another acquisition. Completed and refused acquisitions were kept; no further request was made.")
+
+func reservePortableResearchJournal(run *inputResearchRun, attempt *inputResearchAttempt) error {
+	candidate := *run
+	candidate.Attempts = append(append([]inputResearchAttempt(nil), run.Attempts...), *attempt)
+	raw, err := portableResearchJSON(candidate)
+	if err != nil {
+		return err
+	}
+	reserve := portableResearchAttemptReserve
+	if attempt.Kind == "model" {
+		reserve += backgroundModelReceiptReserve
+	}
+	if len(raw)+researchReservedBytes(*run)+reserve+portableResearchFinalReserve > inputResearchRecordLimit {
+		return errPortableResearchJournalSize
+	}
+	if run.RetrievedBytes < 0 || len(raw)+run.RetrievedBytes+researchReservedBytes(*run)+portableResearchProofReservedBytes(*run)+reserve+inputResearchSourceProofLimit+portableResearchFinalReserve > inputResearchRetainedByteLimit {
+		return errPortableResearchStorageLimit
+	}
+	attempt.ReservedBytes = reserve
+	return nil
+}
+
+// Diagnostic prose is host metadata, not signed evidence. Bound its encoded
+// size so control-character escaping cannot spend the terminal reservation.
+func portableResearchProblemText(problem string) string {
+	raw, err := portableResearchJSON(problem)
+	if err != nil || len(raw) > 8<<10 {
+		return "The research operation failed. Its diagnostic details exceeded the journal metadata limit. Retained acquisitions were kept."
+	}
+	return problem
 }

@@ -45,10 +45,19 @@ func TestConversationHistoryCustodyAndCompare(t *testing.T) {
 	if status != 200 || initial.SHA256 != "absent" || initial.Project != s.projectDir {
 		t.Fatalf("bad initial reply: %d %+v", status, initial)
 	}
-	data := `{"version":1,"chats":[{"id":"chat-one","composer":"private transcript"}]}`
+	row := `{"id":"chat-one","composer":"private transcript","n":9007199254740993,"decimal":1.00,"exponent":1e+2,"zero":-0}`
+	data := `{"version":1,"chats":[` + row + `]}`
 	status, landed := chatRequest(t, ts, "PUT", initial.SHA256, data, true, "")
-	if status != 200 || landed.SHA256 != digestOf([]byte(data)) || string(landed.Content) != data {
+	if status != 200 {
 		t.Fatalf("write: %d %+v", status, landed)
+	}
+	saved := savedConversationBytes(t, s, ts)
+	if landed.SHA256 != digestOf([]byte(saved)) || string(landed.Content) != saved {
+		t.Fatal("save receipt does not match persisted bytes", landed)
+	}
+	var doc conversationDocument
+	if err := json.Unmarshal([]byte(saved), &doc); err != nil || len(doc.Chats) != 1 || string(doc.Chats[0]) != row {
+		t.Fatal("first save changed raw row or numeric wire bytes", saved, err)
 	}
 	info, err := os.Stat(filepath.Join(s.defaultChatDataPath(), s.conversationName()))
 	if err != nil {
@@ -104,9 +113,11 @@ func TestConversationHistoryGuardsAndShape(t *testing.T) {
 	}
 }
 func TestConversationHistoryProjectIsolation(t *testing.T) {
-	shared := t.TempDir()
-	first, a, _ := assistantServerIn(t, shared)
-	second, b, _ := assistantServerIn(t, shared)
+	// One Desk runs per installation, and an installation without a Desk
+	// home belongs to the one project it was first started on: another
+	// project's Desk is another installation.
+	first, a, _ := assistantServerIn(t, t.TempDir())
+	second, b, _ := assistantServerIn(t, t.TempDir())
 	if first.conversationName() == second.conversationName() {
 		t.Fatal("different roots shared a record")
 	}
@@ -145,10 +156,27 @@ func TestConversationHistoryRejectsUnsafeFiles(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for _, method := range []string{"GET", "PUT"} {
+			for i, method := range []string{"GET", "PUT"} {
 				status, _ := chatRequest(t, ts, method, "absent", `{"version":1,"chats":[]}`, true, "")
-				if status != 403 {
+				// A link storage's census meets on first use refuses that use
+				// (403); storage then needs recovery, said in words (503).
+				if status != 403 && !(kind == "symlink" && i > 0 && status == 503) {
 					t.Fatalf("unsafe %s via %s accepted: %d", kind, method, status)
+				}
+			}
+			// The census and its read-only start belong to the storage line.
+			if kind != "symlink" || !storageLineOn() {
+				return
+			}
+			// A link the census meets starts the next Desk read-only (desk
+			// #685), its status naming the link, and the history is refused.
+			ts.Close()
+			assistantRunMust(t, s.Close())
+			again, againTS, _ := assistantServerAt(t, s.cfg.ProjectDir, s.cfg.DeskConfigDir)
+			storageCensusRefusalStatus(t, again, name)
+			for _, method := range []string{"GET", "PUT"} {
+				if status, _ := chatRequest(t, againTS, method, "absent", `{"version":1,"chats":[]}`, true, ""); status != 503 {
+					t.Fatalf("history via %s over a link on a read-only start: %d", method, status)
 				}
 			}
 		})

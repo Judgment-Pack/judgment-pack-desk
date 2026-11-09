@@ -38,6 +38,10 @@ func newActionFixture(t *testing.T) *actionFixture {
 }
 func (f *actionFixture) save(t *testing.T) {
 	t.Helper()
+	// Seed history the way the product's first writer does: enrolled first.
+	if e := f.s.ensureDefaultHistoryEnrollment(t.Context()); e != nil {
+		t.Fatal(e)
+	}
 	store, e := f.s.openChatData()
 	if e != nil {
 		t.Fatal(e)
