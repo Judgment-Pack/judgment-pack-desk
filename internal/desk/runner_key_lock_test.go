@@ -549,9 +549,13 @@ func TestDesksStartSweepsUnderTheLock(t *testing.T) {
 		}
 	}
 	before := keptIn(t, folder)
+	// One Desk runs per installation: each later start is the same project's,
+	// after the Desk before it has closed.
+	project, config := first.cfg.ProjectDir, first.configDir
+	assistantRunMust(t, first.Close())
 	release := holdKeyCustodyLock(t, folder)
 	began := time.Now()
-	held, heldServer := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, DeskConfigDir: first.configDir, Token: testToken})
+	held, heldServer := startDesk(t, Config{ProjectDir: project, JpackBin: bin, DeskConfigDir: config, Token: testToken})
 	if waited := time.Since(began); waited >= 5*time.Second {
 		t.Errorf("Desk's start waited %v for the lock", waited)
 	}
@@ -559,7 +563,7 @@ func TestDesksStartSweepsUnderTheLock(t *testing.T) {
 	held.Close()
 	assertKept(t, folder, before)
 	release()
-	free, freeServer := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, DeskConfigDir: first.configDir, Token: testToken})
+	free, freeServer := startDesk(t, Config{ProjectDir: project, JpackBin: bin, DeskConfigDir: config, Token: testToken})
 	freeServer.Close()
 	free.Close()
 	if names := liveIn(t, folder); len(names) != 0 {
@@ -636,6 +640,10 @@ func TestDesksStartSweepsBeforeItsRunnerTakesTheLock(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// One Desk runs per installation: the start below is the same project's,
+	// after the first Desk has closed.
+	project, config := first.cfg.ProjectDir, first.configDir
+	assistantRunMust(t, first.Close())
 	runnerHasLock, sweepTried := make(chan struct{}), make(chan struct{})
 	var hasOnce, triedOnce sync.Once
 	var runnerFirst atomic.Bool
@@ -660,7 +668,7 @@ func TestDesksStartSweepsBeforeItsRunnerTakesTheLock(t *testing.T) {
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
 	runner, _ := recordingRunner(t, false)
-	s, ts := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, RunnerBin: runner, DeskConfigDir: first.configDir, Token: testToken})
+	s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: bin, RunnerBin: runner, DeskConfigDir: config, Token: testToken})
 	t.Cleanup(func() { ts.Close(); s.Close() })
 	started(t, s.jobs)
 	testHookKeyBetween = nil

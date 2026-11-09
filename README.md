@@ -6198,6 +6198,14 @@ go build -C /path/to/judgment-pack-runtime -o "$PWD/bin/jpack" ./cmd/jpack
 JPACK_PROJECT=/path/to/project go test ./...
 ```
 
+`dev.json` lists the checks the pull request CI runs, and `scripts/dev/check.sh` runs
+them with nothing but bash, git and python3 (`--setup` first for `npm ci`; `--only
+NAME[,NAME]` runs named steps; `--all` continues after a failure) and prints one
+summary block. Steps that read other repositories or download the attested
+companions need network access and `gh`. `AGENTS.md` is the working agreement for
+Codex, and `CLAUDE.md` carries the same text for Claude; edit `AGENTS.md` and run
+`scripts/sync-agent-docs.sh .` to regenerate the other.
+
 `JPACK_BIN` overrides the runtime binary; otherwise `./bin/jpack` is used when
 present.
 

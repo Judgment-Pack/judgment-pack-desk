@@ -1,48 +1,16 @@
-import { expect, it, vi } from 'vitest'
-import { chatReasoningAgent } from '../chat/reasoning'
-import { bindExecution, selectedAssistant } from './target'
-import { bindAgentRun } from '@judgment-pack/harness/agentTransport'
-import { bindModelCall } from '@judgment-pack/harness/session'
-vi.mock('@judgment-pack/harness/agentTransport',()=>({bindAgentRun:vi.fn(()=>vi.fn())}))
-vi.mock('@judgment-pack/harness/session',()=>({bindModelCall:vi.fn(()=>vi.fn())}))
-it('binds subscription runs without constructing an API endpoint capability',()=>{
- const config={engine:'codex' as const,endpoint:null,agent:{provider:'openai' as const,authMethod:'subscription' as const,model:'chosen',tools:[],effort:'high' as const}}
- const bound=bindExecution(config,'chosen','ultra')
- expect(bound).toMatchObject({agent:{model:'chosen'},effort:'high'})
- expect(bound).not.toHaveProperty('model');expect(bound).not.toHaveProperty('thinking')
- expect(bindAgentRun).toHaveBeenCalledWith('chosen');expect(bindModelCall).not.toHaveBeenCalled()
- config.agent.model='changed'
- expect(bound).toMatchObject({agent:{model:'chosen'}})
- expect(()=>bindExecution(config,'chosen','off')).toThrow('Choose a model')
-})
-it('never uses a retained API configuration when the subscription target is absent',()=>{
- const config={engine:'codex' as const,endpoint:{url:'https://example.invalid',kind:'gemini' as const,model:'api',models:['api'],tools:[]}}
- expect(selectedAssistant(config)).toBeNull()
- expect(()=>bindExecution(config,'api','off')).toThrow('ChatGPT subscription')
+import { expect, it } from 'vitest'
+import { selectedAssistant } from './target'
+
+it('selects the subscription target without treating a retained API endpoint as that target', () => {
+ const endpoint={url:'https://example.invalid',kind:'gemini' as const,model:'api',models:['api'],tools:[]}
+ expect(selectedAssistant({engine:'codex',endpoint})).toBeNull()
+ const agent={provider:'openai' as const,authMethod:'subscription' as const,model:'chosen',models:['chosen','other'],tools:[],effort:'high' as const}
+ expect(selectedAssistant({engine:'codex',endpoint,agent})).toEqual({models:['chosen','other'],model:'chosen',tools:[]})
+ expect(agent.effort).toBe('high')
 })
 
-it('binds a discovered chat override to that model without changing Admin or using an API endpoint',()=>{
- const admin={provider:'openai' as const,authMethod:'subscription' as const,model:'default',tools:['get_schema' as const],effort:'high' as const}
- const agent=chatReasoningAgent(admin,'selected',{model:'selected',effort:null})
- const bound=bindExecution({engine:'codex',endpoint:null,agent},'selected','off')
- expect(bound).toMatchObject({agent:{model:'selected'}});expect(bound).not.toHaveProperty('effort')
- expect(bindAgentRun).toHaveBeenLastCalledWith('selected');expect(bindModelCall).not.toHaveBeenCalled()
- expect(admin).toMatchObject({model:'default',effort:'high',tools:['get_schema']})
-})
-
-it('runs another enabled subscription model and does not borrow the default model effort',()=>{
- const config={engine:'codex' as const,endpoint:null,connectionId:'ai-111111111111111111111111',connectionRevision:'a'.repeat(64),agent:{provider:'openai' as const,authMethod:'subscription' as const,model:'default',models:['default','other'],tools:[],effort:'high' as const}}
- expect(bindExecution(config,'other','ultra')).toMatchObject({agent:{model:'other'}})
- expect(bindExecution(config,'other','ultra')).not.toHaveProperty('effort')
- expect(bindAgentRun).toHaveBeenLastCalledWith('other',config)
- expect(bindExecution(config,'default','off')).toHaveProperty('effort','high')
- expect(()=>bindExecution(config,'disabled','off')).toThrow('Choose a model')
-})
-
-it('carries what the connection states about its endpoint on the session, and nothing where it states none',()=>{
- const endpoint={url:'https://example.invalid/v1',kind:'openai-compatible' as const,model:'m',models:['m'],tools:[]}
- const plain=bindExecution({engine:'vercel',endpoint},'m','off')
- expect((plain as {model:object}).model).not.toHaveProperty('capabilities')
- const stated=bindExecution({engine:'vercel',endpoint:{...endpoint,capabilities:{probe:{at:'2026-10-19T12:00:00Z',nativeToolCalls:false,parallelToolCalls:false},override:{contextWindow:32768,nativeToolCalls:true}}}},'m','off')
- expect((stated as {model:{capabilities:unknown}}).model.capabilities).toEqual({contextWindowTokens:32768,outputTokens:4096,nativeToolCalls:true,parallelToolCalls:false})
+it('retains API selection and its explicitly stated capabilities for the UI', () => {
+ const endpoint={url:'https://example.invalid/v1',kind:'openai-compatible' as const,model:'m',models:['m'],tools:[],capabilities:{override:{contextWindow:32768,nativeToolCalls:true}}}
+ expect(selectedAssistant({engine:'vercel',endpoint})).toBe(endpoint)
+ expect(selectedAssistant({endpoint:null})).toBeNull()
 })

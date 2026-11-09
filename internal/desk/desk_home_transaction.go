@@ -5,6 +5,7 @@ package desk
 // their installation leases. Evidence, run chains and databases are moved as
 // opaque bytes; they are never deserialized and rewritten by this transaction.
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,18 +30,19 @@ type homeWrite struct {
 	Executable bool   `json:"executable,omitempty"`
 }
 type deskHomeTransaction struct {
-	RunnerBinary      string                 `json:"runnerBinary,omitempty"`
-	RunnerDigest      string                 `json:"runnerDigest,omitempty"`
-	RunnerRelocations []homeRunnerRelocation `json:"runnerRelocations,omitempty"`
-	Version           int                    `json:"version"`
-	Destination       string                 `json:"destination"`
-	Config            string                 `json:"config"`
-	Prelude           []homeWrite            `json:"prelude,omitempty"`
-	Renames           []homeRename           `json:"renames"`
-	Writes            []homeWrite            `json:"writes"`
-	Parent            string                 `json:"parent"`
-	ParentIdentity    string                 `json:"parentIdentity"`
-	Complete          bool                   `json:"complete"`
+	RunnerBinary      string                       `json:"runnerBinary,omitempty"`
+	RunnerDigest      string                       `json:"runnerDigest,omitempty"`
+	RunnerRelocations []homeRunnerRelocation       `json:"runnerRelocations,omitempty"`
+	Version           int                          `json:"version"`
+	Destination       string                       `json:"destination"`
+	Config            string                       `json:"config"`
+	Prelude           []homeWrite                  `json:"prelude,omitempty"`
+	Renames           []homeRename                 `json:"renames"`
+	Writes            []homeWrite                  `json:"writes"`
+	Parent            string                       `json:"parent"`
+	ParentIdentity    string                       `json:"parentIdentity"`
+	Complete          bool                         `json:"complete"`
+	Retained          *dialectArtifactHomeMovePlan `json:"retained,omitempty"`
 }
 
 func (tx *deskHomeTransaction) relocate(path string) string {
@@ -168,7 +170,7 @@ func (s *Server) prepareHomeTransaction(plan deskHomePlan) (deskHomeTransaction,
 				return tx, err
 			}
 		}
-		if err := tx.addJSON(filepath.Join(newConfig, deskHomeRegistryName), nil, plan.Registry); err != nil {
+		if err := tx.addHomeRegistry(filepath.Join(newConfig, deskHomeRegistryName), nil, plan.Registry); err != nil {
 			return tx, err
 		}
 	}
@@ -393,38 +395,57 @@ func makeHomeParents(path string) error {
 	}
 	return syncPrivateDirectory(root.own.root)
 }
-func applyHomeRename(op homeRename) error {
-	if moved, err := os.Lstat(op.To); err == nil && identityKey(moved) == op.Identity {
-		return nil
+func homeRenameStep(at string) error {
+	if testHomeMigrationStep != nil {
+		return testHomeMigrationStep(at)
 	}
-	before, err := os.Lstat(op.From)
-	if errors.Is(err, os.ErrNotExist) {
-		moved, e := os.Lstat(op.To)
-		if e == nil && identityKey(moved) == op.Identity {
+	return nil
+}
+func applyHomeRename(op homeRename) error {
+	return applyHomeRenameWithParent(op, nil, nil)
+}
+func applyHomeRenameWithParent(op homeRename, source *ProjectRoot, checkSource func() error) (err error) {
+	moved, moveErr := os.Lstat(op.To)
+	landed := moveErr == nil && identityKey(moved) == op.Identity && moved.Mode()&os.ModeSymlink == 0
+	if !landed {
+		before, e := os.Lstat(op.From)
+		if errors.Is(e, os.ErrNotExist) {
+			return errors.New("A migration source is missing; recovery cannot identify its destination.")
+		}
+		if e != nil {
+			return e
+		}
+		if identityKey(before) != op.Identity || before.Mode()&os.ModeSymlink != 0 {
+			return errors.New("A migration source changed after review.")
+		}
+		if err = makeHomeParents(filepath.Dir(op.To)); err != nil {
+			return err
+		}
+	}
+	// Recovery must acknowledge both directory entries even when the rename
+	// already landed. Open existing parents only on that path; create nothing.
+	if source == nil {
+		source, err = OpenProjectRoot(filepath.Dir(op.From))
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, source.Close(), homeRenameStep("rename-source-directory-close")) }()
+		if source.dir != filepath.Dir(op.From) {
+			return errors.New("A migration parent changed.")
+		}
+		checkSource = func() error {
+			if !sameDirectory(filepath.Dir(op.From), source.info) {
+				return errors.New("A migration source parent changed.")
+			}
 			return nil
 		}
-		return errors.New("A migration source is missing; recovery cannot identify its destination.")
 	}
-	if err != nil {
-		return err
-	}
-	if identityKey(before) != op.Identity || before.Mode()&os.ModeSymlink != 0 {
-		return errors.New("A migration source changed after review.")
-	}
-	if err = makeHomeParents(filepath.Dir(op.To)); err != nil {
-		return err
-	}
-	source, err := OpenProjectRoot(filepath.Dir(op.From))
-	if err != nil {
-		return err
-	}
-	defer source.Close()
 	target, err := OpenProjectRoot(filepath.Dir(op.To))
 	if err != nil {
 		return err
 	}
-	defer target.Close()
-	if source.dir != filepath.Dir(op.From) || target.dir != filepath.Dir(op.To) {
+	defer func() { err = errors.Join(err, target.Close(), homeRenameStep("rename-target-directory-close")) }()
+	if target.dir != filepath.Dir(op.To) {
 		return errors.New("A migration parent changed.")
 	}
 	if err = safeMoveParent(source.info); err != nil {
@@ -433,19 +454,49 @@ func applyHomeRename(op homeRename) error {
 	if err = safeMoveParent(target.info); err != nil {
 		return err
 	}
-	current, err := source.own.root.Lstat(filepath.Base(op.From))
-	if err != nil || identityKey(current) != op.Identity {
-		return errors.New("A migration source changed while opening.")
+	checkParents := func() error {
+		if e := checkSource(); e != nil {
+			return e
+		}
+		if !sameDirectory(filepath.Dir(op.To), target.info) {
+			return errors.New("A migration parent changed while acknowledging its entries.")
+		}
+		return nil
 	}
-	if err = renameDirectoryNoReplace(source.own.dirFile, filepath.Base(op.From), target.own.dirFile, filepath.Base(op.To)); err != nil {
+	if err = checkParents(); err != nil {
+		return err
+	}
+	if !landed {
+		current, e := source.own.root.Lstat(filepath.Base(op.From))
+		if e != nil || identityKey(current) != op.Identity || current.Mode()&os.ModeSymlink != 0 {
+			return errors.New("A migration source changed while opening.")
+		}
+		if err = renameDirectoryNoReplace(source.own.dirFile, filepath.Base(op.From), target.own.dirFile, filepath.Base(op.To)); err != nil {
+			return err
+		}
+	}
+	if err = homeRenameStep("rename-source-directory-sync"); err != nil {
 		return err
 	}
 	if err = source.own.dirFile.Sync(); err != nil {
 		return err
 	}
-	return target.own.dirFile.Sync()
+	if err = homeRenameStep("rename-target-directory-sync"); err != nil {
+		return err
+	}
+	if err = target.own.dirFile.Sync(); err != nil {
+		return err
+	}
+	if err = homeRenameStep("rename-directory-readback"); err != nil {
+		return err
+	}
+	current, err := target.own.root.Lstat(filepath.Base(op.To))
+	if err != nil || identityKey(current) != op.Identity || current.Mode()&os.ModeSymlink != 0 {
+		return errors.New("A migration destination changed while acknowledging its entry.")
+	}
+	return checkParents()
 }
-func applyHomeWrite(write homeWrite) error {
+func applyHomeWrite(write homeWrite) (err error) {
 	if err := makeHomeParents(filepath.Dir(write.Path)); err != nil {
 		return err
 	}
@@ -453,7 +504,7 @@ func applyHomeWrite(write homeWrite) error {
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	defer func() { err = errors.Join(err, root.Close()) }()
 	var raw []byte
 	if write.Executable {
 		raw, err = readHomeLauncher(write.Path)
@@ -495,26 +546,44 @@ func homeJournalPath(config string) string {
 	}
 	return filepath.Join(parent, deskHomeTransactionName)
 }
-func saveHomeTransaction(path string, tx deskHomeTransaction, create bool) error {
+func saveHomeTransaction(path string, tx deskHomeTransaction, create bool) (err error) {
 	root, err := OpenProjectRoot(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
-	defer root.Close()
-	raw, err := json.Marshal(tx)
+	defer func() { err = errors.Join(err, root.Close()) }()
+	raw, err := marshalHomeTransaction(tx)
 	if err != nil {
 		return err
 	}
 	if create {
-		return claimPrivateData(root.own.root, filepath.Base(path), raw)
+		err = claimPrivateData(root.own.root, filepath.Base(path), raw)
+	} else {
+		err = writePrivateData(root.own.root, filepath.Base(path), raw)
 	}
-	return writePrivateData(root.own.root, filepath.Base(path), raw)
+	if err != nil {
+		return err
+	}
+	if tx.Retained != nil {
+		after, _, e := readHomeMoveFile(root.own.root, filepath.Base(path), homeTransactionLimit)
+		if e != nil || !bytes.Equal(after, raw) {
+			return errors.Join(errDialectArtifactOwner, e)
+		}
+		return root.own.dirFile.Sync()
+	}
+	return nil
 }
 
 var testHomeMigrationStep func(string) error
 
 func applyHomeTransaction(path string, tx *deskHomeTransaction) error {
-	if tx.Version != 1 || !validProjectHistoryPath(tx.Destination) || !validProjectHistoryPath(tx.Config) {
+	if tx.Retained != nil && !tx.Complete {
+		return applyRetainedHomeTransaction(path, tx)
+	}
+	return applyHomeTransactionHeld(path, tx, nil)
+}
+func applyHomeTransactionHeld(path string, tx *deskHomeTransaction, held *dialectArtifactHomeMoveHold) error {
+	if (tx.Version != 1 && tx.Version != 2) || !validProjectHistoryPath(tx.Destination) || !validProjectHistoryPath(tx.Config) {
 		return errors.New("Invalid Desk home migration journal.")
 	}
 	if tx.Complete {
@@ -541,14 +610,40 @@ func applyHomeTransaction(path string, tx *deskHomeTransaction) error {
 			}
 		}
 		if !final {
-			if err := applyHomeWrite(write); err != nil {
+			var err error
+			if held != nil {
+				err = applyHomeWriteAcknowledged(write, held.check)
+			} else {
+				err = applyHomeWrite(write)
+			}
+			if err != nil {
 				return err
 			}
 		}
 	}
 	for i, op := range tx.Renames {
-		if err := applyHomeRename(op); err != nil {
+		if held != nil {
+			if err := held.check(); err != nil {
+				return err
+			}
+		}
+		var source *ProjectRoot
+		var checkSource func() error
+		if held != nil {
+			var err error
+			source, err = held.renameParent(i)
+			if err != nil {
+				return err
+			}
+			checkSource = held.checkRenameParents
+		}
+		if err := applyHomeRenameWithParent(op, source, checkSource); err != nil {
 			return fmt.Errorf("Desk home migration stopped at folder %d: %w", i+1, err)
+		}
+		if held != nil {
+			if err := held.check(); err != nil {
+				return err
+			}
 		}
 		if testHomeMigrationStep != nil {
 			if err := testHomeMigrationStep(fmt.Sprintf("rename-%d", i)); err != nil {
@@ -569,7 +664,33 @@ func applyHomeTransaction(path string, tx *deskHomeTransaction) error {
 		}
 	}
 	for i, write := range tx.Writes {
-		if err := applyHomeWrite(write); err != nil {
+		var writeErr error
+		if held != nil {
+			if i == len(tx.Writes)-1 {
+				if err := held.CloseInner(); err != nil {
+					return err
+				}
+				writeErr = applyHomeWriteAcknowledged(write, held.checkOuter)
+			} else {
+				if err := held.check(); err != nil {
+					return err
+				}
+				retained := false
+				for _, row := range tx.Retained.Rows {
+					if row.Write == i {
+						retained = true
+						writeErr = held.applyRow(row)
+						break
+					}
+				}
+				if !retained {
+					writeErr = applyHomeWriteAcknowledged(write, held.check)
+				}
+			}
+		} else {
+			writeErr = applyHomeWrite(write)
+		}
+		if err := writeErr; err != nil {
 			return fmt.Errorf("Desk home migration stopped at setting %d: %w", i+1, err)
 		}
 		if testHomeMigrationStep != nil {
@@ -577,6 +698,9 @@ func applyHomeTransaction(path string, tx *deskHomeTransaction) error {
 				return err
 			}
 		}
+	}
+	if held != nil {
+		return nil
 	}
 	tx.Complete = true
 	return saveHomeTransaction(path, *tx, false)

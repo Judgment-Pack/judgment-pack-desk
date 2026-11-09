@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -22,18 +21,19 @@ type deskHomeMove struct {
 	Identity string `json:"-"`
 }
 type deskHomePlan struct {
-	Destination      string           `json:"destination"`
-	Moves            []deskHomeMove   `json:"moves"`
-	Blockers         []string         `json:"blockers"`
-	Token            string           `json:"token"`
-	Registry         deskHomeRegistry `json:"-"`
-	Config           string           `json:"-"`
-	Parent           string           `json:"-"`
-	ParentIdentity   string           `json:"-"`
-	ChatFiles        []string         `json:"-"`
-	ChatPath         string           `json:"-"`
-	ChatConversation string           `json:"-"`
-	SourceRevision   string           `json:"-"`
+	Destination      string                       `json:"destination"`
+	Moves            []deskHomeMove               `json:"moves"`
+	Blockers         []string                     `json:"blockers"`
+	Token            string                       `json:"token"`
+	Registry         deskHomeRegistry             `json:"-"`
+	Config           string                       `json:"-"`
+	Parent           string                       `json:"-"`
+	ParentIdentity   string                       `json:"-"`
+	ChatFiles        []string                     `json:"-"`
+	ChatPath         string                       `json:"-"`
+	ChatConversation string                       `json:"-"`
+	SourceRevision   string                       `json:"-"`
+	Retained         *dialectArtifactHomeMovePlan `json:"-"`
 }
 
 func homePlanParent(destination string) (string, os.FileInfo, error) {
@@ -79,6 +79,19 @@ func uniqueHomeFolder(name, id string, used map[string]bool) string {
 	used[strings.ToLower(candidate)] = true
 	return candidate
 }
+
+const deskHomeJournalMoveRefusal = "This layout would move Desk's recovery journal. Keep the settings directory and its parent outside the startup project before consolidating Desk home."
+
+func homeJournalMoveBlocker(plan deskHomePlan) error {
+	journal := homeJournalPath(plan.Config)
+	for _, move := range plan.Moves {
+		if pathContains(move.From, journal) {
+			return errors.New(deskHomeJournalMoveRefusal)
+		}
+	}
+	return nil
+}
+
 func (s *Server) planDeskHome(destination string) (deskHomePlan, error) {
 	plan := deskHomePlan{Destination: destination, Moves: []deskHomeMove{}, Blockers: []string{}, Config: s.configDir}
 	if s.cfg.PolicyAuthority != nil {
@@ -254,7 +267,7 @@ func (s *Server) planDeskHome(destination string) (deskHomePlan, error) {
 			var revision strings.Builder
 			for _, item := range entries {
 				name := item.Name()
-				belongs := name == conversation || name == "draft-graphs-"+suffix || name == "draft-packs-"+suffix || name == "briefs-"+suffix || name == "pack-tests-"+suffix || name == "source-reviews-"+suffix || name == "ai-memory-"+suffix || strings.HasPrefix(name, attachmentProjectPrefix(conversation))
+				belongs := name == conversation || name == "draft-graphs-"+suffix || name == "draft-packs-"+suffix || name == "briefs-"+suffix || name == "pack-tests-"+suffix || name == "source-reviews-"+suffix || name == "ai-memory-"+suffix || name == "assistant-runs-"+suffix || name == "assistant-source-approvals-"+suffix || strings.HasPrefix(name, attachmentProjectPrefix(conversation))
 				if !belongs {
 					continue
 				}
@@ -340,16 +353,20 @@ func (s *Server) planDeskHome(destination string) (deskHomePlan, error) {
 			}
 		}
 	}
+	if err := homeJournalMoveBlocker(plan); err != nil {
+		plan.Blockers = append(plan.Blockers, err.Error())
+	}
 	sort.Strings(plan.Blockers)
 	// Bind all internal IDs and saved history to this review as well as the rows
 	// visible in Admin. A changed registry cannot be confirmed with an old token.
-	snapshot, _ := json.Marshal(struct {
-		Destination, Config, Parent, ParentID, Revision string
-		Registry                                        deskHomeRegistry
-		Moves                                           []deskHomeMove
-		Identities                                      []string
-		Files                                           []string
-	}{destination, plan.Config, parent, plan.ParentIdentity, plan.SourceRevision, plan.Registry, plan.Moves, homeMoveIdentities(plan.Moves), plan.ChatFiles})
+	plan.Retained, err = s.snapshotDialectArtifactHomeMove(plan)
+	if err != nil {
+		return plan, err
+	}
+	snapshot, err := homePlanSnapshot(plan)
+	if err != nil {
+		return plan, err
+	}
 	mac := hmac.New(sha256.New, s.reviewKey[:])
 	mac.Write(snapshot)
 	plan.Token = hex.EncodeToString(mac.Sum(nil))

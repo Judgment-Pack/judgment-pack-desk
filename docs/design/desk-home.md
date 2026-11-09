@@ -65,6 +65,24 @@ Invalid locators fail visibly instead of initializing another installation.
 An explicit external project is refused after consolidation; importing another
 project is separate work.
 
+## Storage and home moves in v0.14.0
+
+Once an installation's storage is set up (any name storage sets up in the
+settings folder, `storageInstallationNames`, is present), Desk v0.14.0 does not
+move a whole installation into a Desk home or move a Desk home. Storage
+registers its roots, objects and workspaces where they are, and no transition
+carries the owner record and catalog to another folder yet, so a moved
+installation would start with its storage refused. `GET /api/desk-home`
+answers `canMove: false` and `moveRefusal` in words; `POST
+/api/desk-home/preview` and `/api/desk-home/move` answer 409 with the same
+words (`errDeskHomeMoveAfterStorage`) before any plan, lease or shutdown.
+Nothing is scheduled or moved. A plain project move (`/api/project-location`,
+Admin → General → Project location → Move to…) is unchanged, and a project in a
+Desk home still moves only with its home. Journal recovery
+(`RecoverDeskHomeMigration`, `finishHomeTransaction`) is unchanged, so a move
+journalled before storage is finished as before. Storage-aware home moves are
+Desk #698.
+
 ## Migration contract
 
 The preview enumerates startup files, every saved Desk, active startup chat

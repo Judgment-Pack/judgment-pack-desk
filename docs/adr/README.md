@@ -17,3 +17,5 @@ Each record carries its own status and amendments.
 | [0011](0011-graphs-in-desk.md) | Author and read project graphs with the runtime | accepted |
 | [0012](0012-witness-as-a-holder.md) | A witness as a holder of checkpoints | accepted |
 | [0013](0013-the-desks-inputs-are-dialect-documents.md) | The Desk's inputs are dialect documents | proposed, 2026-10-15 |
+| [0014](0014-server-owned-assistant-runs.md) | Server-owned assistant runs | accepted architecture; internal ledger foundation; production cutover pending |
+| [0015](0015-storage-line-off-in-v0.14.0.md) | The storage line is off in v0.14.0 | accepted, 2026-11-08 |

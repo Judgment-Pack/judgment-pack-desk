@@ -87,6 +87,9 @@ func resolveDialectPublicationApproval(ctx context.Context, s *Server, chat assi
 	if saved.SHA256 != action.Revision || saved.Document.Recipe.Qualification == nil {
 		return refuse()
 	}
+	if err := requireOrdinaryInputQualification(saved.Document.Recipe.Qualification); err != nil {
+		return assistantActionResource{}, err
+	}
 	dependencies := []retainedArtifactRef{artifactReference(dialectRecipeBytes(saved.Document)), artifactReference([]byte(saved.Document.Recipe.Qualification.Pack))}
 	if !sameDraftValue(dependencies, review.Dependencies) {
 		return refuse()

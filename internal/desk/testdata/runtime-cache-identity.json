@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "provenance": "Handwritten inputs and canonical strings; neither implementation generated expected values. Go and TypeScript consume every row. Only hashes are derived from expected canonical strings at test time.",
+  "canonicalCases": [
+    {
+      "id": "version-valid-surrogate-pair",
+      "descriptor": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\ud83d\\ude00\"}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-😀\"}}",
+      "version": "0.39.0-😀"
+    },
+    {
+      "id": "version-literal-replacement-character",
+      "descriptor": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-�\"}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-�\"}}",
+      "version": "0.39.0-�"
+    },
+    {
+      "id": "recursive-order",
+      "descriptor": "{\"z\":2,\"tool\":{\"version\":\"0.39.0\",\"name\":\"Runtime\"},\"a\":{\"z\":1,\"a\":[{\"b\":2,\"a\":1},3]}}",
+      "canonical": "{\"a\":{\"a\":[{\"a\":1,\"b\":2},3],\"z\":1},\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"},\"z\":2}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "numbers",
+      "descriptor": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"},\"n\":[-0,1.0,1e-7,1e-6,1e20,1e21,9007199254740993,1e400,-1e400,5e-324]}",
+      "canonical": "{\"n\":[0,1,1e-7,0.000001,100000000000000000000,1e+21,9007199254740992,null,null,5e-324],\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "numeric-keys",
+      "descriptor": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"},\"keys\":{\"10\":\"ten\",\"2\":\"two\",\"01\":1,\"4294967294\":4,\"4294967295\":5,\"+1\":6,\"-0\":7}}",
+      "canonical": "{\"keys\":{\"2\":\"two\",\"10\":\"ten\",\"4294967294\":4,\"+1\":6,\"-0\":7,\"01\":1,\"4294967295\":5},\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "surrogates-and-marker-text",
+      "descriptor": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"},\"s\":[\"\\ud800\",\"\\udfff\",\"\\ud83d\\ude00\",\"\\\\ud800\",\"0074006f006f006c\",\"~d800;\",\"\\u2028\\u2029\",\"<>&\"]}",
+      "canonical": "{\"s\":[\"\\ud800\",\"\\udfff\",\"\ud83d\ude00\",\"\\\\ud800\",\"0074006f006f006c\",\"~d800;\",\"\u2028\u2029\",\"<>&\"],\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "utf16-key-order",
+      "descriptor": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"},\"keys\":{\"\\ue000\":1,\"\\ud83d\\ude00\":2,\"\\ud800\":3,\"\\\\ud800\":4,\"\\udfff\":5}}",
+      "canonical": "{\"keys\":{\"\\\\ud800\":4,\"\\ud800\":3,\"\ud83d\ude00\":2,\"\\udfff\":5,\"\ue000\":1},\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "duplicate-members-last-wins",
+      "descriptor": "{\"tool\":{\"name\":\"old\",\"version\":\"dev\"},\"tool\":{\"version\":\"0.39.0\",\"name\":\"Runtime\"},\"a\":1,\"a\":2}",
+      "canonical": "{\"a\":2,\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "control-escapes",
+      "descriptor": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"},\"s\":\"\\b\\f\\n\\r\\t\\u0001/\\\\\\\"\"}",
+      "canonical": "{\"s\":\"\\b\\f\\n\\r\\t\\u0001/\\\\\\\"\",\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    }
+  ],
+  "payloadCases": [
+    {
+      "id": "null-structured-falls-back",
+      "result": "{\"structuredContent\":null,\"content\":[{\"type\":\"text\",\"text\":\"{\\\"tool\\\":{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0\\\"}}\"}]}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "text-parts-joined-with-newline",
+      "result": "{\"content\":[{\"type\":\"image\"},{\"type\":\"text\",\"text\":\"{\\\"tool\\\":\"},{\"type\":\"text\",\"text\":\"{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0\\\"}}\"}]}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "structured-takes-precedence",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}},\"content\":[{\"type\":\"text\",\"text\":\"not JSON\"}]}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "text-envelope-original-lone-surrogate-unit",
+      "result": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"tool\\\":{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0\\\"},\\\"s\\\":\\\"\\ud800\\\"}\"}]}",
+      "canonical": "{\"s\":\"\\ud800\",\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "invalid-report-exception",
+      "result": "{\"isError\":true,\"structuredContent\":{\"status\":\"invalid\",\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}}",
+      "canonical": "{\"status\":\"invalid\",\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}",
+      "version": "0.39.0"
+    },
+    {
+      "id": "prefixed-release-version",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"v0.39.0\"}}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"v0.39.0\"}}",
+      "version": "v0.39.0"
+    },
+    {
+      "id": "prerelease-version",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-rc.1\"}}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-rc.1\"}}",
+      "version": "0.39.0-rc.1"
+    }
+  ],
+  "malformedVersions": [
+    {
+      "id": "version-malformed-dev-cannot-be-unavailable",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"dev\\ud800\"}}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"dev\\ud800\"}}",
+      "versionHex": "646576eda080",
+      "versionUnits": [100, 101, 118, 55296]
+    },
+    {
+      "id": "version-malformed-unknown-cannot-be-unavailable",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"unknown\\udfff\"}}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"unknown\\udfff\"}}",
+      "versionHex": "756e6b6e6f776eedbfbf",
+      "versionUnits": [117, 110, 107, 110, 111, 119, 110, 57343]
+    },
+    {
+      "id": "version-malformed-zero-cannot-be-unavailable",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.0.0\\ud800\"}}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.0.0\\ud800\"}}",
+      "versionHex": "302e302e30eda080",
+      "versionUnits": [48, 46, 48, 46, 48, 55296]
+    },
+    {
+      "id": "version-lone-high-structured",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\ud800\"}}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\ud800\"}}",
+      "versionHex": "302e33392e302deda080",
+      "versionUnits": [48, 46, 51, 57, 46, 48, 45, 55296]
+    },
+    {
+      "id": "version-lone-low-structured",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\udfff\"}}}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\udfff\"}}",
+      "versionHex": "302e33392e302dedbfbf",
+      "versionUnits": [48, 46, 51, 57, 46, 48, 45, 57343]
+    },
+    {
+      "id": "version-lone-high-text-inner-escape",
+      "result": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"tool\\\":{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0-\\\\ud800\\\"}}\"}]}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\ud800\"}}",
+      "versionHex": "302e33392e302deda080",
+      "versionUnits": [48, 46, 51, 57, 46, 48, 45, 55296]
+    },
+    {
+      "id": "version-lone-low-text-inner-escape",
+      "result": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"tool\\\":{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0-\\\\udfff\\\"}}\"}]}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\udfff\"}}",
+      "versionHex": "302e33392e302dedbfbf",
+      "versionUnits": [48, 46, 51, 57, 46, 48, 45, 57343]
+    },
+    {
+      "id": "version-lone-high-text-original-unit",
+      "result": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"tool\\\":{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0-\\ud800\\\"}}\"}]}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\ud800\"}}",
+      "versionHex": "302e33392e302deda080",
+      "versionUnits": [48, 46, 51, 57, 46, 48, 45, 55296]
+    },
+    {
+      "id": "version-lone-low-text-original-unit",
+      "result": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"tool\\\":{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0-\\udfff\\\"}}\"}]}",
+      "canonical": "{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-\\udfff\"}}",
+      "versionHex": "302e33392e302dedbfbf",
+      "versionUnits": [48, 46, 51, 57, 46, 48, 45, 57343]
+    }
+  ],
+  "disabledResults": [
+    {
+      "id": "empty-result",
+      "result": ""
+    },
+    {
+      "id": "null-result",
+      "result": "null"
+    },
+    {
+      "id": "array-result",
+      "result": "[]"
+    },
+    {
+      "id": "incomplete-json",
+      "result": "{"
+    },
+    {
+      "id": "trailing-json",
+      "result": "{} {}"
+    },
+    {
+      "id": "array-descriptor",
+      "result": "{\"structuredContent\":[]}"
+    },
+    {
+      "id": "missing-tool",
+      "result": "{\"structuredContent\":{}}"
+    },
+    {
+      "id": "invalid-name",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":3,\"version\":\"0.39.0\"}}}"
+    },
+    {
+      "id": "invalid-version",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":3}}}"
+    },
+    {
+      "id": "error-result",
+      "result": "{\"isError\":true,\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"}}}"
+    },
+    {
+      "id": "invalid-structured-does-not-fall-back",
+      "result": "{\"structuredContent\":{},\"content\":[{\"type\":\"text\",\"text\":\"{\\\"tool\\\":{\\\"name\\\":\\\"Runtime\\\",\\\"version\\\":\\\"0.39.0\\\"}}\"}]}"
+    },
+    {
+      "id": "invalid-unicode-escape",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0\"},\"s\":\"\\u+000\"}}"
+    },
+    {
+      "id": "empty-version",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"\"}}}"
+    },
+    {
+      "id": "dev-version",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"dev\"}}}"
+    },
+    {
+      "id": "dev-substring-case-insensitive",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-DEV.1\"}}}"
+    },
+    {
+      "id": "unknown-version",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"unknown\"}}}"
+    },
+    {
+      "id": "unknown-substring-case-insensitive",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.39.0-Unknown\"}}}"
+    },
+    {
+      "id": "zero-version",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.0.0\"}}}"
+    },
+    {
+      "id": "zero-version-prefix",
+      "result": "{\"structuredContent\":{\"tool\":{\"name\":\"Runtime\",\"version\":\"0.0.01\"}}}"
+    }
+  ]
+}

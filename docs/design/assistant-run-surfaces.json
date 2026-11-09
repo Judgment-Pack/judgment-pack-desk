@@ -1,0 +1,1057 @@
+{
+  "version": 1,
+  "status": "Agent v0.10.0 pinned; separate mounted API Save, native Apply/Save, and native dirty-refusal offline journeys passed; supplied-peer candidate and baseline owner/browser2chat qualifications passed; upstream contracts, human decisions, combined current-head journeys, CI, certification, review and release acceptance remain pending",
+  "deskEvidence": "Focused candidate API/native evidence is recorded in agent-v010-adoption.md. Separate mounted offline journeys passed: API Save (two finite API calls, one fresh canonical check, one write, exact bytes after action/disk/readback/reload, unchanged saved suite); native Apply/ordinary Save (one start, one model, one write, zero fresh checks, exact saved-byte/reload, unchanged-suite, and duplicate-Apply-blocked assertions); and native dirty-refusal (14 steps, one start, one model, zero writes/checks, refusal while dirty, discard restoration and stable reload). An earlier dirty journey timed out with its cause unproven. The fixture waited within its original deadline to observe complete/acknowledged state; this does not establish a product guard change. These separate finite-peer runs are offline evidence, not one combined current-head run, live quality evidence, full certification or release acceptance. No HTTP 409 was observed; the 409 question remains unresolved. Full checklist/CI, certification, independent review, security/release review and upstream dependencies remain pending. Separate candidate and baseline owner/browser2chat supplied-peer qualifications each passed two distinct fresh chats with full saved/rendered/reloaded fixture answers, accounting sequences 1 and 2, normal owner shutdown, and expected callback counts 0 and 1. These are synthetic offline harness evidence only. Candidate passed before a later fixture metadata compatibility adjustment; no combined same-head rerun is claimed. Baseline evidence used original source plus accounting/helper overlay, not an unchanged published executable. Product sources/assets/owner builds remained unchanged across harness fixes. Agent #199/#201/#202/#215–#219 remain open. On 2026-10-25, the maintainer approved the #660 mathematical-value-loss refusal, equivalent lexical normalization and exact accepted-bytes contract; #660 remains open. The approved replacement validation gate retires the old-Desk-versus-new-Desk live answer/usage/cost comparison and its comparison-specific answer-change decision from v0.14.0 acceptance. Required replacement evidence is actual Desk API/native certification with source/build identities; deterministic browser journeys through the actual candidate application across required milestone surfaces; and diagnosis/resolution or test-driver-only proof for the observed candidate dispatch failure. The first live attempt stopped before inference at setup timeout. The retry completed both baseline cases, then stopped during candidate case-one capture after dispatch classification, with no candidate answers or usage report; both retry owners shut down normally. Candidate sign-in/readiness succeeded, but live-answer completion and dispatch root cause remain unproven. No further live model calls are required by this gate. Do not claim live answer equivalence, superiority, quality or token/cost improvement; subscription monetary cost remains unavailable. Full checklist, exact-head CI, certification, independent and whole-release review, security/platform/race/i18n gates, and all upstream dependencies remain in force; no release acceptance is established.",
+  "agentEvidence": {
+    "version": "v0.10.0",
+    "revision": "e00d2b11d11af4dabb0a4de6c1a5e7322bd8527e",
+    "harnessArchiveSha256": "58dd309b4a902978bdb174b217c9ba2f11a394afb8896ed68b7c0840c5f0068a",
+    "inventory": "agent-v010-contract-inventory.json",
+    "inventoryScope": "Source contract schema SHA-256 metadata only; not npm bundled-schema coverage, vector coverage or certification."
+  },
+  "adr": "../adr/0014-server-owned-assistant-runs.md",
+  "scope": "All actual model dispatch callsites found by runAssistantSession/loadEngine/bindModelCall/bindAgentRun/runBackgroundModel scans; host subrows are feature capabilities, not independent provider loops.",
+  "policy": {
+    "serverOwns": [
+      "principal/session/Policy epoch",
+      "selected Desk/project descriptor",
+      "owner/current request/phase/Plan",
+      "connection revision/model/profile",
+      "tool offers/classifications",
+      "context/checkpoint/operation accounting",
+      "question/compute grant/recovery",
+      "all action/write admission"
+    ],
+    "browserKeeps": [
+      "UI/stream rendering",
+      "user editing and explicit actions",
+      "pure contract data/readers",
+      "narrow pending client-only callbacks"
+    ]
+  },
+  "strictAcceptanceDependency": {
+    "id": "provider-managed-desk-binding",
+    "proof": "Agent #67 is resolved in the published dependency; a private actual Desk exclusive-account/bridge parent-child-parent fixture is implemented; complete binding certification remains required",
+    "blockedSlices": [
+      "complete no-regression cutover release until actual binding is verified"
+    ],
+    "validIndependentSlices": [
+      "durable protocol/admission/store",
+      "real Desk relay/Runtime/gate binding",
+      "API/Eino feature migration",
+      "diagnostics/structured-step boundary migration"
+    ],
+    "requiredDecision": "Use released adapter.Agent and adapter/agent through delegate.With; no copied coordinator or provider loop",
+    "upstreamIssue": "https://github.com/Judgment-Pack/judgment-pack-agent/issues/67"
+  },
+  "surfaces": [
+    {
+      "id": "main-chat-and-right-pane",
+      "category": "conversation",
+      "currentOwner": "ChatProvider \u2192 useSavedChatRun \u2192 authenticated saved-chat server owner and canonical adapter",
+      "targetOwner": "Go durable run + server domain workflow; browser renders shared events and submits explicit actions",
+      "entrypoints": [
+        "web/src/chat/ChatProvider.tsx",
+        "web/src/chat/ChatPanel.tsx",
+        "web/src/assistant/serverRuns/useSavedChatRun.ts",
+        "web/src/assistant/serverRuns/controller.ts:SavedChatRun"
+      ],
+      "preserve": [
+        "selected connection/revision/model and per-chat reasoning",
+        "original turns/attachments/current request, Plan/Ask me/Auto, source-choice pause",
+        "ordered response history/proposals/questions/budget/task progress and reload"
+      ],
+      "verification": [
+        "web/src/assistant/serverRuns/useSavedChatRun.test.tsx",
+        "web/src/research/run.test.ts",
+        "web/src/chat/store.test.ts",
+        "existing AI browser recovery fixtures; new SSE reconnect/lost-ack coverage",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New API/native Work/Plan chat, exact Runtime read/GET/SSE/readback/idempotence; current SavedChatRun/controller tests PASS."
+    },
+    {
+      "id": "pack-authoring-pane",
+      "category": "conversation",
+      "currentOwner": "Existing standalone authoring capture \u2192 useAuthoringRun \u2192 closed production author-pack owner",
+      "targetOwner": "same Go run service, purpose authoring; pane owns immutable capture and view lease",
+      "entrypoints": [
+        "web/src/assistant/AssistantPane.tsx",
+        "web/src/assistant/useAuthoringRun.ts",
+        "web/src/chat/PackAssistant.tsx"
+      ],
+      "preserve": [
+        "request-time unsaved/saved document basis and exact proposal",
+        "critic cases and current saved-suite checks",
+        "retained pane context, host Runtime identity outside model gate, memory flag; no spontaneous guardrail"
+      ],
+      "verification": [
+        "web/src/assistant/useAuthoringRun.test.tsx",
+        "web/src/assistant/AssistantPane.test.tsx",
+        "web/src/assistant/runContext.test.ts",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New API/native author-pack execution PASS; source/selection currentness8 cases PASS."
+    },
+    {
+      "id": "describe-it",
+      "category": "conversation",
+      "currentOwner": "DescribeIt capture \u2192 useAuthoringRun \u2192 closed production describe-pack owner",
+      "targetOwner": "Go authoring run on exact captured source; existing review/apply UI",
+      "entrypoints": [
+        "web/src/shell/DescribeIt.tsx:useDescribeIt",
+        "web/src/assistant/useAuthoringRun.ts"
+      ],
+      "preserve": [
+        "single terminal state, stream/report, unknowns",
+        "dirty guards, one undo application, generation vs accepted document"
+      ],
+      "verification": [
+        "web/src/shell/DescribeIt.test.tsx",
+        "web/src/assistant/useAuthoringRun.test.tsx",
+        "existing proposal/recovery browser fixtures",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New describe-pack API execution PASS; standalone browser fixture selected."
+    },
+    {
+      "id": "graph-authoring-pane",
+      "category": "conversation",
+      "currentOwner": "GraphAuthor capture \u2192 useAuthoringRun \u2192 closed production author-graph owner",
+      "targetOwner": "Go graph purpose and server-owned graph validation/explain handlers",
+      "entrypoints": [
+        "web/src/graphs/GraphAuthor.tsx",
+        "web/src/graphs/author.ts:graphHostTools",
+        "internal/desk/graph_author.go"
+      ],
+      "preserve": [
+        "exact graph JSON/stdin, validate/explain findings; no operational audit",
+        "reviewed config/lock/write nonce and storage CAS remain separate human action"
+      ],
+      "verification": [
+        "web/src/graphs/author.test.tsx",
+        "internal/desk/graph_author_test.go",
+        "web/src/graphs/assistant.test.tsx",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New author-graph API execution PASS; current graph/source selection guards retained."
+    },
+    {
+      "id": "legacy-research-authoring-and-draft-view",
+      "category": "domain-workflow",
+      "currentOwner": "Legacy URL redirects to NewPackView and canonical saved chat; unreachable browser loop removed",
+      "targetOwner": "Go feature workflow using shared adapter turns and context.CorrectArtifact; UI projection only",
+      "entrypoints": [
+        "web/src/routes/DraftPackView.tsx:NewPackView",
+        "web/src/routes/DraftPackView.tsx",
+        "web/src/assistant/serverRuns/useSavedChatRun.ts",
+        "web/src/research/run.ts"
+      ],
+      "preserve": [
+        "Gateway acquisition/session/seal verification and retained source ledger",
+        "MAX_REVISIONS/candidate fingerprints and exact expected outcomes",
+        "question/failed/stopped/budget restore and explicit retry; no nested browser model loop"
+      ],
+      "verification": [
+        "web/src/research/run.test.ts",
+        "web/src/research/retainedCheck.test.ts",
+        "web/src/research/tools.test.ts",
+        "internal/desk/ai_execution_browser_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh all3 mounted CreationRoutes PASS against current normal-New actual producer outputs; existing legacy URL redirects to NewPackView; no new research hook."
+    },
+    {
+      "id": "independent-authoring-review-turn",
+      "category": "conversation-subphase",
+      "currentOwner": "Server creation workflow retains exact isolated review input and runs the canonical adapter",
+      "targetOwner": "Go workflow invokes isolated adapter turn using canonical context/phase",
+      "entrypoints": [
+        "internal/desk/assistant_creation_adapter.go"
+      ],
+      "preserve": [
+        "no parent chat transcript/context index; explicit scoped source/candidate/check inputs",
+        "no interaction/propose_pack tools, original expectations preserved",
+        "review cost belongs to existing approved operation"
+      ],
+      "verification": [
+        "web/src/research/run.test.ts",
+        "web/src/assistant/serverRuns/useSavedChatRun.test.tsx",
+        "published six-scenario isolation fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh actual normal-New creation API and MultipleCorrections/last PASS; independent source oracle and exact explicit correction/retest guards retained."
+    },
+    {
+      "id": "saved-pack-proposal-check-correct-save",
+      "category": "domain-workflow",
+      "currentOwner": "Server saved-pack proposal/check/continuation and explicit reviewed save; browser renders and submits current actions",
+      "targetOwner": "Go owning artifact workflow/check ports; existing approval dispatcher for writes",
+      "entrypoints": [
+        "internal/desk/assistant_saved_pack.go",
+        "web/src/chat/packProposal.ts",
+        "web/src/chat/usePackAutoSave.ts",
+        "web/src/chat/usePackProposalSave.ts",
+        "internal/desk/assistant_approval.go",
+        "internal/desk/assistant_approval_pack.go"
+      ],
+      "preserve": [
+        "exact request-time saved target/text and saved suite (not creation draft cases)",
+        "proposed/buffer applied/saved states distinct; checks never grant save",
+        "consume scoped session grant before commit, dirty/CAS guards/readback, no replay"
+      ],
+      "verification": [
+        "internal/desk/assistant_approval_contract_test.go",
+        "internal/desk/assistant_approval_test.go",
+        "existing saved-pack proposal browser fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Separate mounted offline journeys passed with supplied peers. API Save: two finite API calls, one fresh canonical saved-suite check, one write; exact candidate bytes matched after action, disk/readback and reload; saved suite unchanged; duplicate action blocked and reload stable. Native Apply/ordinary Save: one start, one model, one write, zero fresh checks; exact saved bytes survived disk readback/reload, authored suite unchanged and duplicate Apply blocked. Native dirty-refusal: all 14 steps passed with one start, one model, zero writes/checks; Apply and Save refused while dirty, discard restored original content, and reload stayed stable. These are separate finite-peer journeys, not a combined current-head run or live/release acceptance. On 2026-10-25, the maintainer approved the #660 mathematical-value-loss refusal, equivalent lexical normalization and exact accepted-bytes contract; #660 remains open with final checks, exact-head CI, independent review and release acceptance pending."
+    },
+    {
+      "id": "brief-summaries-all-subjects",
+      "category": "tool-free-generation",
+      "currentOwner": "BriefPane fixed reservation and server client \u2192 closed production Brief executor",
+      "targetOwner": "Go run on server-verified frozen brief reservation; no tools, browser rendering/print remain",
+      "entrypoints": [
+        "web/src/briefs/BriefPane.tsx:start",
+        "web/src/briefs/context.ts",
+        "web/src/briefs/model.ts:briefText",
+        "internal/desk/briefs.go",
+        "internal/desk/brief_definition.go",
+        "internal/desk/brief_state.go"
+      ],
+      "preserve": [
+        "definition vs case/job/run source identity and current selected model",
+        "one bounded frozen snapshot, four validated sections, reservation token",
+        "no external fetching/evaluation/write authority; stale-source state and cancellation"
+      ],
+      "verification": [
+        "web/src/briefs/BriefPane.test.tsx",
+        "internal/desk/briefs_test.go",
+        "internal/desk/brief_definition_test.go",
+        "internal/desk/brief_state_test.go",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New API pack/graph/pack-draft/graph-draft/case + native + Runner job/run PASS. Fixture forbids Runtime execution/tools."
+    },
+    {
+      "id": "canonical-critic",
+      "category": "conversation-subphase",
+      "currentOwner": "Released Go canonical critic with exact Desk cases/settings; browser reads reports",
+      "targetOwner": "Eino canonical critic; Desk Codex transport uses published turn critique helpers when requested",
+      "entrypoints": [
+        "web/src/assistant/criticCases.ts",
+        "web/src/assistant/critic.ts",
+        "web/src/assistant/ProposalReport.tsx",
+        "web/src/chat/responseHistory.ts",
+        "Agent go/adapter/eino/critic.go",
+        "Agent go/adapter/turn/refutation.go"
+      ],
+      "preserve": [
+        "separate critic phase/tools; incomplete IDs/typed facts/outcomes",
+        "chat/project critic off-auto-on and capability reasoning; canonical decision retained through report/reload",
+        "enabled critic model only; known request/token/invocation figures",
+        "canonical Auto facts and forced-off decisions across API/subscription capabilities; preserve explicit saved chat review choices"
+      ],
+      "verification": [
+        "web/src/assistant/criticCases.test.ts",
+        "web/src/assistant/critic.test.ts",
+        "canonical critic vectors/scenarios, separate bridge fixture",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh model-free preparation legacy/canonical/project settings PASS. Standalone compiler project-setting omission found/repaired; normal-New authoring passes. Existing canonical critic behavior/vectors inherited."
+    },
+    {
+      "id": "api-generic-delegation",
+      "category": "conversation-subphase",
+      "currentOwner": "Canonical delegate.With(Eino) through production factory and Desk gate/source/receipt owners",
+      "targetOwner": "published delegate.With(eino.New(), Options) and host Children gate factory",
+      "entrypoints": [
+        "internal/desk/assistant_execution.go",
+        "Agent go/adapter/delegate",
+        "Agent go/gate/phase.go:ChildPhase"
+      ],
+      "preserve": [
+        "profile/brief/reference isolation, parent phase intersection",
+        "shared response/test/tool limits and connection capacity; task-keyed progress",
+        "reports/reuse/retry-before-first-byte and parent synthesis reserve; fresh Retry disables reuse"
+      ],
+      "verification": [
+        "published Go delegation/scenario vectors",
+        "web/src/chat/DelegatedTaskDetails.test.tsx",
+        "web/src/assistant/execution/ExecutionProgress.test.tsx",
+        "new bound parent/child gate/allowance race fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited bound Eino/delegate gate/capacity/progress fixtures. Full generic parent/child journey not rerun here; current binding certification belongs to separate worker."
+    },
+    {
+      "id": "subscription-generic-delegation",
+      "category": "conversation-subphase",
+      "currentOwner": "Canonical agent/delegate through actual Desk Manager; complete native binding certification still required",
+      "targetOwner": "published Go Agent coordinator through actual Desk Codex transport and registered saved-owner paths; complete native binding certification remains unresolved",
+      "entrypoints": [
+        "Agent packages/harness/engines/codex/index.ts:145-151",
+        "Agent packages/harness/delegation.ts:844-864",
+        "Agent go/adapter/delegate/coordinator.go:24-26",
+        "internal/codexbridge/run.go:admitRun"
+      ],
+      "preserve": [
+        "one active invocation per subscription; release parent before child",
+        "actual agentRuns and provider-managed checkpoint, unknown model request counts",
+        "retain child reports/scopes/receipts and explicit recovery; do not silently remove feature"
+      ],
+      "verification": [
+        "private actual CodexManager parent handoff/child/parent continuation and checkpoint/release fixtures are implemented",
+        "complete product/provider-managed certification remains pending; native certification contract mismatch tracked by https://github.com/Judgment-Pack/judgment-pack-agent/issues/201; bounded fixture passes do not establish full certification"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited actual CodexManager parent-release/child/parent continuation evidence. Full native binding certification has an unresolved Agent #201 contract mismatch; no scheduler change or resolution schedule is claimed."
+    },
+    {
+      "id": "input-research-single-step",
+      "category": "bounded-structured-step",
+      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget; canonical Eino/native dispatch retains one-use execution receipts in the original workflow journal",
+      "targetOwner": "same explicit workflow, unified bound dispatch authorization/context/capacity and one reservation per model action",
+      "entrypoints": [
+        "internal/desk/input_research_worker.go",
+        "internal/desk/input_research_model.go:inputResearchModel",
+        "internal/desk/background_model.go:runBackgroundModel",
+        "internal/desk/input_research_context.go",
+        "internal/desk/background_execution.go",
+        "docs/design/background-canonical-execution.md"
+      ],
+      "preserve": [
+        "host-authored tool/JSON response schema + validation and typed fields",
+        "fitResearchContext/read_context; exact source/result receipts and budget reservations",
+        "one response per step, no generic browser loop; no uncertain-call replay",
+        "API RequestCap=1 with finishing/tools closed; native provider-managed accounting and one fixed validated response tool",
+        "original 16 MiB journal limit and two-child concurrency; full bounded receipt reserved before dispatch",
+        "current choice/source/profile/credential/session custody; uncertain delivery and restored receipts never replay"
+      ],
+      "verification": [
+        "internal/desk/input_research_model_test.go",
+        "internal/desk/input_research_completion_test.go",
+        "internal/desk/background_model_test.go",
+        "internal/desk/background_completion_test.go",
+        "internal/desk/background_execution_test.go",
+        "internal/desk/background_opening_projection_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited background091 final-focused.log PASS27, API RequestCap1/native0/1 exact one-use receipt proofs. These preserve one-request admission and receipt custody. Desk #668 is delivered: the complete structured background envelope opens through the published runcontext.OpeningProjection ([Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)) in background_opening_projection.go, which may shorten only retained source previews to fit and refuses before dispatch when they cannot; actual API/native boundary tests are in background_opening_projection_test.go. Workflow unchanged."
+    },
+    {
+      "id": "input-research-domain-parent-child",
+      "category": "domain-workflow",
+      "currentOwner": "journaled input research worker selects sequential/delegated host phases and admitted steps; canonical Eino/native dispatch retains one-use execution receipts in the original workflow journal",
+      "targetOwner": "retain domain workflow on server; route each step via same one-use bound dispatch reservation",
+      "entrypoints": [
+        "internal/desk/input_research_delegation.go",
+        "internal/desk/input_research_phases.go",
+        "internal/desk/input_research_budget.go",
+        "internal/desk/input_research_http.go",
+        "internal/desk/input_research_journal.go",
+        "internal/desk/background_execution.go",
+        "docs/design/background-canonical-execution.md"
+      ],
+      "preserve": [
+        "reviewed recipe/profiles/record goal and aggregate approved source/model budgets",
+        "domain child assignments and acquisition receipts, retained typed record values",
+        "not generic assistant delegate_tasks and not blocked by absent generic provider coordinator",
+        "API RequestCap=1 with finishing/tools closed; native provider-managed accounting and one fixed validated response tool",
+        "original 16 MiB journal limit and two-child concurrency; full bounded receipt reserved before dispatch",
+        "current choice/source/profile/credential/session custody; uncertain delivery and restored receipts never replay"
+      ],
+      "verification": [
+        "internal/desk/input_research_delegation_test.go",
+        "internal/desk/input_research_budget_test.go",
+        "internal/desk/input_research_parent_identity_test.go",
+        "internal/desk/input_research_recovery_test.go",
+        "internal/desk/background_execution_test.go",
+        "internal/desk/background_opening_projection_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited background091 reservation-concurrency-fixed.log and final-focused.log; original two-child/journal limits and no replay unchanged. Desk #668 is delivered: the complete structured background envelope opens through the published runcontext.OpeningProjection ([Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)) in background_opening_projection.go, which may shorten only retained source previews to fit and refuses before dispatch when they cannot; actual API/native boundary tests are in background_opening_projection_test.go."
+    },
+    {
+      "id": "portable-research-and-model-acquisition",
+      "category": "bounded-structured-step",
+      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel; canonical Eino/native dispatch retains one-use execution receipts in the original workflow journal",
+      "targetOwner": "retain reviewed portable workflow and nonce-bound model-source acquisition; shared bound dispatch",
+      "entrypoints": [
+        "internal/desk/portable_research_worker.go",
+        "internal/desk/model_source.go",
+        "internal/desk/portable_research_journal.go",
+        "internal/desk/portable_research_budget.go",
+        "internal/desk/input_research_reservations.go",
+        "internal/desk/background_execution.go",
+        "docs/design/background-canonical-execution.md"
+      ],
+      "preserve": [
+        "frozen Plan/choice/profile/limits, action schema answer/search/page/read_context",
+        "one admitted acquisition/response with durable exact operation ID",
+        "no arbitrary prompt/model browser endpoint; original transport uncertainty cannot replay",
+        "API RequestCap=1 with finishing/tools closed; native provider-managed accounting and one fixed validated response tool",
+        "original 16 MiB journal limit and two-child concurrency; full bounded receipt reserved before dispatch",
+        "current choice/source/profile/credential/session custody; uncertain delivery and restored receipts never replay"
+      ],
+      "verification": [
+        "internal/desk/portable_research_test.go",
+        "internal/desk/model_source_test.go",
+        "internal/desk/portable_research_acceptance_test.go",
+        "internal/desk/input_research_journal_workflows_test.go",
+        "internal/desk/background_execution_test.go",
+        "internal/desk/background_opening_projection_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited background091 actual-portable-and-native.log and model-source-actual.log using verified official Runner/Runtime. Desk #668 is delivered: the complete structured background envelope opens through the published runcontext.OpeningProjection ([Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)) in background_opening_projection.go, which may shorten only retained source previews to fit and refuses before dispatch when they cannot; actual API/native boundary tests are in background_opening_projection_test.go."
+    },
+    {
+      "id": "model-list-discovery",
+      "category": "non-generative-diagnostic",
+      "currentOwner": "Fixed server discovery owner and separate account model discovery; browser reads bounded replies",
+      "targetOwner": "fixed server diagnostic/listing capability with same session/Desk/connection binding; no browser relay capability",
+      "entrypoints": [
+        "web/src/assistant/DeskAISettings.tsx:listedModels",
+        "web/src/assistant/endpointCheck.ts",
+        "web/src/assistant/modelListing.ts",
+        "web/src/assistant/SubscriptionModels.tsx",
+        "internal/desk/assistant.go",
+        "internal/codexbridge/models.go"
+      ],
+      "preserve": [
+        "bounded list pages/result fields and exact configured family/key custody",
+        "GET does not spend generative allowance; no fallback/default model fabrication"
+      ],
+      "verification": [
+        "web/src/assistant/modelListing.test.ts",
+        "web/src/assistant/modelListing.test.ts",
+        "existing connection/provider/model admission tests"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited reviewed diagnostic discovery current/historical/refusal proofs; model list remains separate from conversation execution."
+    },
+    {
+      "id": "capability-probe",
+      "category": "bounded-generative-diagnostic",
+      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe \u2192 observeSettings: server-owned fixed capability observation (assistant_settings_observation*.go) plus model-list POST",
+      "targetOwner": "fixed host-authored one-request diagnostic; same bound relay/context/accounting; no tool execution",
+      "entrypoints": [
+        "web/src/assistant/EndpointCapabilitiesSection.tsx",
+        "web/src/assistant/capabilityProbe.ts",
+        "web/src/assistant/endpointCapabilities.ts",
+        "web/src/assistant/serverRuns/settingsObservation.ts",
+        "internal/desk/assistant_settings_observation.go"
+      ],
+      "preserve": [
+        "probe_echo calls counted but never executed; no model-written instructions retained",
+        "counts/numbers/facts only, owner overrides retained, timestamp/probe source explicit",
+        "output/time/body bounds, diagnostic reservation and no hidden retry loop"
+      ],
+      "verification": [
+        "web/src/assistant/capabilityProbe.test.ts",
+        "web/src/assistant/endpointCapabilities.test.ts",
+        "web/src/assistant/serverRuns/settingsObservation.test.ts",
+        "internal/desk/assistant_settings_observation_test.go",
+        "internal/desk/assistant_settings_observation_store_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Desk #662 delivered: the browser no longer calls the model; it asks the server for a fixed host-authored capability observation (128-token ceiling, probe_echo counted, never executed) and reads the canonical run's settings-observation result. Observation ceilings unchanged."
+    },
+    {
+      "id": "endpoint-connection-probe",
+      "category": "bounded-diagnostic-mixed",
+      "currentOwner": "endpointCheck: Anthropic generative ping \u2192 observeSettings (server-owned settings observation, one-token ceiling); OpenAI/Gemini GET \u2192 handleAssistantProbe \u2192 probeEndpoint",
+      "targetOwner": "same fixed diagnostic owner; generative ping reserved/accounted, shared auth/context/custody path",
+      "entrypoints": [
+        "internal/desk/assistant.go:handleAssistantProbe/probeEndpoint",
+        "internal/desk/assistant_settings_observation.go",
+        "web/src/assistant/endpointCheck.ts"
+      ],
+      "preserve": [
+        "do not misclassify Anthropic ping as free model discovery",
+        "saved endpoint/revision/key bound before dispatch, one short response; no free text command"
+      ],
+      "verification": [
+        "internal/desk/assistant_test.go",
+        "internal/desk/assistant_settings_observation_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Desk #662 delivered: the generative Anthropic ping is a server-owned settings observation with a one-token ceiling; the model-free GET probes stay on the fixed server action. No observation or ceiling relaxation."
+    },
+    {
+      "id": "codex-connection-test",
+      "category": "bounded-generative-diagnostic",
+      "currentOwner": "AssistantSettings \u2192 useConnectionDiagnostic \u2192 closed canonical connection-diagnostic owner",
+      "targetOwner": "implemented fixed server diagnostic on the actual private bridge, canonical context/checkpoint and schema-only Runtime grant",
+      "entrypoints": [
+        "web/src/assistant/AssistantSettings.tsx",
+        "web/src/assistant/useConnectionDiagnostic.ts",
+        "internal/desk/assistant_diagnostic_execution.go",
+        "internal/codexbridge/run.go"
+      ],
+      "preserve": [
+        "actual subscription auth/native model admission; no API fallback",
+        "honest provider-managed usage 0/not supplied, required current schema observation remains gated",
+        "exact saved connection/profile/session/project/credential-file custody, lost-ack read-only reconciliation, Stop and stale observation withdrawal"
+      ],
+      "verification": [
+        "web/src/assistant/AssistantSettings.test.tsx",
+        "internal/desk/agent_run_test.go",
+        "internal/desk/assistant_diagnostic_test.go",
+        "internal/codexbridge/account_binding_linux_test.go",
+        "web/src/assistant/useConnectionDiagnostic.test.tsx",
+        "scripts/dev/assistant-diagnostic.sh"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited component091 native091-focused-final.log and native091-reference.log: Used0/Limit1/noRequestCap/schema receipt/exact one generation."
+    },
+    {
+      "id": "context-maintenance",
+      "category": "model-free-canonical",
+      "currentOwner": "Canonical Go Host/context/checkpoint ownership; retired browser loop and duplicate prompt assembly removed; Settings probes are server-owned observations (#662)",
+      "targetOwner": "published Go context plus server-owned ChatContext per authorized owner; no model summarizer",
+      "entrypoints": [
+        "web/src/assistant/chatContexts.ts",
+        "web/src/assistant/runContext.ts",
+        "web/src/research/retainedCheck.ts",
+        "Agent go/context/chat.go",
+        "Agent go/context/session.go",
+        "internal/desk/assistant_prompt.go",
+        "internal/desk/ai_wire_guard.go"
+      ],
+      "preserve": [
+        "immutable Runtime reads keyed by identity/version, development build run-only",
+        "child visible-reference scopes; dispose owner context on authorized delete",
+        "no reuse of mutable evaluation/workspace reads; preserve exact originals",
+        "adapter owns prompt assembly; legacy relay/native transports measure limits without recall inference or prompt appends"
+      ],
+      "verification": [
+        "web/src/assistant/context/coverage.test.ts",
+        "web/src/assistant/runContext.test.ts",
+        "published context vectors; host descriptor/model gate integration fixture",
+        "internal/desk/assistant_prompt_wire_test.go",
+        "internal/desk/ai_wire_guard_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited released Agent091 canonical records/context/projection/continuation proofs. Retired browser loops removed; no second context policy."
+    },
+    {
+      "id": "runtime-model-ceiling",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "get_schema",
+        "list_examples",
+        "get_example",
+        "validate",
+        "experimental_evaluate",
+        "experimental_test_cases"
+      ],
+      "entrypoints": [
+        "Agent go/gate",
+        "internal/desk/relay.go",
+        "internal/desk/policy_execution_relay.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Calls only; rehearsal rewrite and test cap; host metadata describe_runtime never in this ceiling",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ],
+      "journeyEvidence": "Inherited Runtime/provider transport bound/refusal vectors; no ceiling/parser/probe changes authorized."
+    },
+    {
+      "id": "graph-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "list_decisions",
+        "read_decision",
+        "get_graph_authoring_instructions",
+        "propose_graph",
+        "graph_rehearse",
+        "graph_validate",
+        "graph_explain"
+      ],
+      "entrypoints": [
+        "web/src/graphs/chatTools.ts",
+        "web/src/graphs/author.ts",
+        "internal/desk/graphs.go",
+        "internal/desk/graph_author.go",
+        "internal/desk/graph_drafts.go",
+        "internal/desk/assistant_host_tools.go",
+        "internal/desk/assistant_graph_tools.go",
+        "internal/desk/assistant_domain_output.go"
+      ],
+      "targetOwner": "finite Go host registry through published Agent HostTool and phase gate; concrete rooted Graph producers and terminal GraphDraft projection",
+      "preserve": [
+        "Go current handlers + retained draft proposal; saved rehearsal only; no operational audit/save inferred",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "internal/desk/assistant_graph_tools_test.go: actual API/Eino seven-tool execution, exact proposal and terminal write/ack recovery",
+        "internal/desk/assistant_graph_boundary_test.go: actual CodexManager parent/child/parent, immutable callback scope, stale custody, failed persistence and storage/import refusal",
+        "scripts/assistant-graph-projection-reference.mjs: existing browser Graph snapshot/detached draft readers"
+      ],
+      "status": "registered server Graph host capabilities with inherited bounded API/native/browser-reader evidence; complete integrated journeys/certification/review remain pending",
+      "journeyEvidence": "Inherited server graph host/source/phase/approval contracts; fresh standalone Graph factory wiring PASS."
+    },
+    {
+      "id": "policy-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_policy",
+        "propose_policy_update",
+        "read_policy_comparison",
+        "read_policy_coverage",
+        "propose_policy_pack_interpretation",
+        "propose_policy_graph_interpretation"
+      ],
+      "entrypoints": [
+        "web/src/policies/chatTools.ts",
+        "internal/desk/policy_assistant.go",
+        "internal/desk/assistant_policy_tools.go",
+        "internal/desk/assistant_policy_tools_output.go",
+        "internal/desk/assistant_approval.go"
+      ],
+      "targetOwner": "finite Go host registry with authenticated Policy services and durable typed review cards, reached through the registered saved-chat owner",
+      "preserve": [
+        "Go authenticated reads/retained proposal; exact Policy revision and retained source selectors; interpretations only open reviewable ordinary authoring",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "actual API six-tool producer, Plan/child/current-access/stale request, retained comparison and exact coverage fixtures",
+        "durable Policy output import/projection and existing ChatStore update/interpretation readers in the standard projection CI path",
+        "actual native parent-child-parent fixtures pass with repeated provider IDs, exact HTML/Unicode arguments and distinct callback receipts; typed acceptance actions and complete integrated journey/certification acceptance remain pending"
+      ],
+      "status": "registered restricted Policy host capabilities with inherited bounded evidence; typed acceptance actions and complete integrated journeys/certification/review remain pending",
+      "journeyEvidence": "Inherited reviewed server Policy/source/private approval workflows; no Policy grant or behavior changed."
+    },
+    {
+      "id": "dialect-recipe-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "get_dialect_recipe_instructions",
+        "list_dialects",
+        "read_dialect_recipe",
+        "propose_dialect_recipe"
+      ],
+      "entrypoints": [
+        "web/src/dialects/chatTools.ts",
+        "web/src/dialects/drafts.ts",
+        "internal/desk/assistant_dialect_recipe_tools.go",
+        "internal/desk/assistant_dialect_recipe_tools_store.go",
+        "internal/desk/assistant_dialect_recipe_tools_output.go",
+        "internal/desk/dialect_drafts.go"
+      ],
+      "targetOwner": "finite Go HostTool registry, current preparation reads and independent retained recipe draft, reached through the registered saved-chat owner",
+      "preserve": [
+        "Go recipe contract + independent retained draft; no record fabrication or source execution",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "actual API four-tool and native parent-child-parent producers with exact portable field types and current read authority",
+        "durable pre-create metadata, actual independent draft readback, queued revocation/cancellation, uncertain-write/replay and import refusals",
+        "existing ChatStore proposal reader and actual dialectDraftQuery readback in the standard projection CI path"
+      ],
+      "status": "registered server recipe host capabilities with separate exact-allowance research admission and inherited bounded evidence; complete integrated journeys/certification/review remain pending",
+      "journeyEvidence": "Inherited server recipe/source/approval contracts. No new factory purpose or browser execution."
+    },
+    {
+      "id": "dialect-mapping-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_dialect",
+        "propose_dialect"
+      ],
+      "entrypoints": [
+        "web/src/dialects/dialectChatTools.ts",
+        "internal/desk/input_typed_research.go",
+        "internal/desk/assistant_dialect_mapping_tools.go",
+        "internal/desk/assistant_dialect_mapping_service.go",
+        "internal/desk/assistant_dialect_mapping_output.go"
+      ],
+      "targetOwner": "private Go fixed registry and finite check receipts implemented; production registration/browser migration pending",
+      "preserve": [
+        "Go fresh revision/pack-digest read and complete mapping proposal; preserve omitted/typed fields, no automatic save",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "actual four-tool API and native parent/child producers against pinned offline Runtime",
+        "finite import, typed preview, freshness, owner queued revocation, unknown retention and completed observation fixtures",
+        "existing ChatStore/action/check/publication/review readers in the standard projection CI command"
+      ],
+      "journeyEvidence": "Inherited reviewed server mapping/background one-use workflow and background091 custody evidence; no mapping/parser change."
+    },
+    {
+      "id": "dialect-actions-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "request_dialect_research",
+        "read_dialect_records",
+        "read_dialect_activity",
+        "propose_dialect_action"
+      ],
+      "entrypoints": [
+        "web/src/dialects/chatActionTools.ts",
+        "internal/desk/input_research_approval.go",
+        "internal/desk/input_research_http.go",
+        "internal/desk/assistant_dialect_record_tools.go",
+        "internal/desk/assistant_dialect_action_registry.go",
+        "internal/desk/assistant_dialect_action_output.go",
+        "internal/desk/input_research_request.go",
+        "internal/desk/assistant_dialect_research_tools.go",
+        "internal/desk/assistant_dialect_research_projection.go"
+      ],
+      "targetOwner": "private Go records/activity/review actions and actual exact-allowance research admission implemented; production registration/browser migration pending",
+      "preserve": [
+        "Go existing research allowance/recipe/record review admission; proposals and source-start receipts remain different",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "actual API/native producers and existing ChatStore/validDialectChatAction/applyDialectRecipeAction readers in standard CI",
+        "bounded supplied strings versus typed research, local human review currency, real owner history, queued authority/source and finite import/projection witnesses",
+        "actual request_dialect_research API/native workflow producers: exact existing grant and same-turn manual/other-call receipt, held preparation view/current authority/expiry at queue commit, independent worker, typed unknown outcome and explicit model-free ProjectChat reconciliation; real browser review/admitted/activity readers"
+      ],
+      "journeyEvidence": "Inherited exact-source job/action admission and approval workflow; no new purpose or authority."
+    },
+    {
+      "id": "dialect-publication-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_dialect_publication",
+        "propose_dialect_publication"
+      ],
+      "entrypoints": [
+        "web/src/dialects/publicationChatTools.ts",
+        "internal/desk/assistant_approval_dialect.go",
+        "internal/desk/assistant_dialect_mapping_tools.go",
+        "internal/desk/assistant_dialect_mapping_service.go",
+        "internal/desk/assistant_dialect_mapping_output.go"
+      ],
+      "targetOwner": "private Go fixed registry and finite check receipts implemented; production registration/browser migration pending",
+      "preserve": [
+        "Go exact saved mapping publication check/proposal, separate explicit one-publication grant, active jobs retain pins",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "actual four-tool API and native parent/child producers against pinned offline Runtime",
+        "finite import, typed preview, freshness, owner queued revocation, unknown retention and completed observation fixtures",
+        "existing ChatStore/action/check/publication/review readers in the standard projection CI command"
+      ],
+      "journeyEvidence": "Inherited canonical publication/retained subscription checks and approval admission; frontend only uses extracted pure handover types."
+    },
+    {
+      "id": "test-workspace-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_pack_tests",
+        "propose_test_cases"
+      ],
+      "entrypoints": [
+        "web/src/packs/test-workspace/chatTools.ts",
+        "web/src/packs/test-workspace/store.ts",
+        "internal/desk/conversations.go",
+        "internal/desk/assistant_test_tools.go",
+        "internal/desk/assistant_test_tools_output.go",
+        "internal/desk/assistant_test_tools_storage.go"
+      ],
+      "targetOwner": "finite Go registry and exact-owner review-only suite proposals, reached through the registered saved-chat owner; released Runtime compatibility remains independently guarded",
+      "preserve": [
+        "Go read/retain proposal with exact target/suite/coverage/source inputs; human owns expectations and accepts case edits",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "actual API and native parent-child-parent with distinct canonical calls; saved/unfinalized draft, Plan/child/current-access and exact pack/case/coverage safeguards",
+        "producer-bound prepared output, completed-result recovery, suite append/readback and terminal chat link; cancellation/Stop and contradictory imports refuse replay or dangling links",
+        "standard projection CI uses actual ChatStore, suite/proposal, reviewed replacement/stale and review-link browser consumers",
+        "scripted Runtime fixtures prove the existing Desk consumer contract; pinned Runtime v0.37.0 lacks pack/fact-check matrix support, so released positive proposal acceptance remains blocked by Desk #582 (Runtime #274)"
+      ],
+      "status": "registered server test-design host capabilities with scripted contract evidence; Desk #582 intentionally v0.17.0-scoped and Runtime v0.37.0 positive proposal support unavailable; complete integrated journeys/certification/review remain pending",
+      "journeyEvidence": "Inherited server test proposal/approval/check contracts. Pure retained-check/import tests PASS; canonical appendConversation stable-ID/dedup/conflict preserved and mutants caught."
+    },
+    {
+      "id": "chat-web-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_link",
+        "search_sources",
+        "explore_website"
+      ],
+      "entrypoints": [
+        "web/src/chat/linkTools.ts",
+        "web/src/search/tools.ts",
+        "web/src/chat/researchChoice.ts",
+        "internal/desk/researchrelay.go",
+        "internal/desk/assistant_search_tools.go",
+        "internal/desk/assistant_search_acquire.go",
+        "internal/desk/assistant_search_store.go",
+        "internal/desk/assistant_search_recovery.go",
+        "internal/desk/assistant_search_output.go",
+        "scripts/assistant-search-projection-reference.mjs",
+        "internal/desk/assistant_url.go",
+        "internal/desk/assistant_link_tools.go",
+        "internal/desk/assistant_link_acquire.go",
+        "internal/desk/assistant_link_store.go",
+        "internal/desk/assistant_link_read.go",
+        "internal/desk/assistant_link_recovery.go",
+        "internal/desk/assistant_link_output.go",
+        "internal/desk/assistant_link_window.go",
+        "scripts/assistant-link-reference.mjs",
+        "internal/desk/assistant_website_tools.go",
+        "internal/desk/assistant_website_record.go",
+        "internal/desk/assistant_website_read.go",
+        "internal/desk/assistant_website_output.go",
+        "scripts/assistant-website-reference.mjs"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go bounded Gateway/document acquisition using saved current research choice and verified receipts; absent research choice pauses before acquisition",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "actual API/native root and research-child producers; current saved choice, durable shared3/retained64 limits, exact signed proof and UTF16 boundaries",
+        "queued current Gateway/connection/session/profile/source admission, cancellation, uncertain acquire/seal/storage outcomes and observational GET and explicit offline exact-receipt recovery",
+        "actual Go-emitted SearchReference/SearchStep through existing ChatStore and verifySearch browser readers",
+        "historical URL vectors retain original host/browser expectations; current shared standards-backed reader plus additive Go/browser normalization/extraction and actual Unicode/punycode producer parity address Desk #590",
+        "private read_link actual API/native/read-child documents and windows; saved-user/current-verified-search authority, durable ordinary shared3/retained256 budgets, separate current-run custody, partial/selected pages, exact citations and terminal receipt-only recovery",
+        "shared browser/private UTF16 safe-start correction returns an intact surrogate pair and actual offset; canonical encoded-prefix end bound and continuation, BMP/combining/page-span and ECMAScript whitespace/folding vectors",
+        "private explore_website API/native/research-child maps and site-bound pages consumed by real browser verifiers; latest per-seed authority, one exploration/16 distinct seeds and shared ordinary3/discovered10, queued exact map/seed receipts and receipt-only recovery"
+      ],
+      "status": "registered server search_sources/read_link/explore_website capabilities and finite research-choice continuation with inherited bounded evidence; complete integrated journeys/certification/review remain pending",
+      "journeyEvidence": "Inherited server verified chat document/web/search readers. Pure supplied-link/current provenance readers PASS; fresh production Runtime tool read PASS."
+    },
+    {
+      "id": "research-source-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "search_sources",
+        "read_source",
+        "cite_excerpt"
+      ],
+      "entrypoints": [
+        "web/src/research/tools.ts",
+        "web/src/research/ledger.ts",
+        "web/src/research/gatewayClient.ts"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go feature ledger/acquisition/seal/typed reference handling; source text framed as data and window bounded",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ],
+      "journeyEvidence": "Inherited signed source/current-pin/custody proofs. Pure page/excerpt/admission readers PASS; old browser research scheduler/microtasks obsolete."
+    },
+    {
+      "id": "plan-and-memory-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "propose_plan",
+        "remember"
+      ],
+      "entrypoints": [
+        "web/src/chat/ChatProvider.tsx",
+        "Agent packages/harness/planning/tools.ts",
+        "Agent packages/harness/memory/tools.ts",
+        "internal/desk/ai_memory.go",
+        "internal/desk/assistant_memory_lifecycle.go",
+        "internal/desk/assistant_memory_review.go",
+        "web/src/assistant/memory/client.ts",
+        "web/src/assistant/memory/MemorySettings.tsx",
+        "docs/design/canonical-memory-acceptance.md"
+      ],
+      "targetOwner": "Desk private memory store, authenticated person review and exact source/store CAS; released Agent v0.9.1 reserved remember, canonical proposal identity, typed recall and metadata-only MemoryLifecycle callback",
+      "preserve": [
+        "Go Plan record/references and existing private memory handlers; latest saved user message binding, separate human Start work, no remembered permissions/evidence",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation",
+        "TestAssistantMemoryActualBindings: actual API/native question pause and person-answer resume explicitly revoke forgotten, cleared, edited, disabled, dependency-changed and expired records without reconstructing deleted text",
+        "Strict legacy/enriched private v1 and backup readers; canonical identity/digest and byte/count bounds; stable shared-host snapshot, query-independent lifecycle eligibility and focused concurrent CAS race probes",
+        "TestAssistantMemoryProposalActual: API/native Work/Plan root proposals, captured Suggest false proposal cap zero and separate Use recall; current setting changes refuse dispatch without admitted policy mutation",
+        "Exact current person/session/project/chat/latest-human/run/revision/proposal and If-Match acceptance; canonical identity preserved, edits distinct, atomic metadata-only receipts; Clear/Forget/uncertain replay barriers and focused CAS race",
+        "Actual independent creation reviewers reject forced reserved remember and complete with readable checkpoints; shared Go/backup/browser strict receipt vectors, default UI consumers and eleven targeted mutation kills"
+      ],
+      "status": "canonical memory production wiring candidate implemented; final complete cutover and certification pending",
+      "remaining": [
+        "Remove any remaining unused legacy host support after final replacement certification",
+        "Complete release journeys and bound API/native certification"
+      ],
+      "journeyEvidence": "Inherited memory626 lifecycle12 and memory598 actual API/native Work/Plan8 plus acceptance/CAS proofs. Fresh production Suggest cap0 and current controls PASS.",
+      "currentOwner": "Canonical reserved remember and typed recall/lifecycle; Desk explicit person review and private store/source CAS",
+      "retiredLegacyToolNames": [
+        "recall_memory",
+        "remember_memory"
+      ]
+    },
+    {
+      "id": "canonical-interaction-proposal-execution",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "ask_user",
+        "propose_pack",
+        "read_context",
+        "list_context",
+        "read_window",
+        "search",
+        "update_plan",
+        "request_budget_increase",
+        "delegate_tasks"
+      ],
+      "entrypoints": [
+        "Agent go/context",
+        "Agent go/adapter/turn",
+        "web/src/assistant/proposePack.ts",
+        "web/src/chat/ChatProvider.tsx"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Use exact published constants/schemas/readers rather than spelling new aliases; question pauses, proposal is event not write, budget is request not grant, delegation subject to explicit dependency gate",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ],
+      "journeyEvidence": "Existing server-owned question save/CAS and exact digest/current-revision action tests pass. At Desk 8886caf1afacaa8764386a44f49eb7818a68e711, three controller cases freshly passed against Go observations: API/native continuation readers without fresh admission, snapshots/SSE/session-end, and latest saved-pack mismatch/pass refresh. These protocol/adapter fixture consumers do not establish every integrated interaction or another normal-New activation proof."
+    },
+    {
+      "id": "client-only-editor-interaction",
+      "category": "client-callback",
+      "modelEntrypoint": false,
+      "entrypoints": [
+        "web/src/packs/edit/editingContext.ts",
+        "web/src/assistant/acceptProposal.ts",
+        "web/src/shell/UnsavedChanges.tsx",
+        "web/src/chat/ChatProvider.tsx"
+      ],
+      "targetOwner": "server pending intent/operation; browser local buffer/dirty veto and reviewed apply",
+      "preserve": [
+        "only typed server-selected callback under authenticated owner lease",
+        "cannot authorize write, declare tool/phase, expand runtime, mint grant or run model",
+        "persist intent/result IDs; exact local buffer revision and one undo action; lost ack uncertain/no automatic replay",
+        "absent UI pauses before dispatch; rendering/invalidation/navigation are notifications"
+      ],
+      "verification": [
+        "existing buffer/unsaved/application behavior tests",
+        "new callback duplicate/wrong owner/revision/lost-ack/reload fixture"
+      ],
+      "journeyEvidence": "Inherited exact host-action/editor/dirty-CAS tests; current SavedChatRun/controller and mounted creation routes PASS; no editor authority moved."
+    },
+    {
+      "id": "private-plan-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "propose_plan"
+      ],
+      "entrypoints": [
+        "internal/desk/assistant_plan_tools.go",
+        "internal/desk/assistant_plan_output.go",
+        "internal/desk/assistant_plan_references.go",
+        "internal/desk/chat_plan.go",
+        "web/src/assistant/planning/PlanCard.tsx"
+      ],
+      "targetOwner": "Desk persists review-only ChatPlan through the existing private host journal and chat projection; canonical Agent owns execution and events",
+      "preserve": [
+        "Exact plan effect, root Plan phase only; Policy conversations gain only this phase-specific Plan capability",
+        "Current rooted file/Dialect revisions and exact linked identity; at most six additional and eight distinct references",
+        "Immutable operation identity and metadata, 24 sequential revisions, prior supersession, interrupted custody and no uncertain replay",
+        "Canonical ChatStore/validPlans/PlanCard and explicit human Start work; no work, approval or allowance grant"
+      ],
+      "verification": [
+        "TestAssistantPlanActualProducersAndProjection",
+        "TestAssistantPlanActualRefusalEvents",
+        "TestAssistantPlanAcceptanceCurrentState",
+        "TestAssistantPlanProjectionCurrentState",
+        "TestAssistantPlanQueuedAuthority",
+        "TestAssistantPlanCancelledObservedAndUnknown",
+        "scripts/dev/assistant-plan.sh"
+      ],
+      "remaining": [
+        "Complete current-head integrated Plan journeys, certification and independent review; registered persisted review-only Plan ownership still requires explicit human Start work, separate approvals and compute",
+        "Package-owned draft-edit scope is not established by delivered canonical memory lifecycle/person acceptance or production registration evidence"
+      ],
+      "journeyEvidence": "Actual current Plan proposal \u2192 human acceptance \u2192 Work completion passed separately in the API and native offline application witnesses. Both retained the full offer; the accepted active Plan task completed with its actual acknowledged host-read operation as evidence while the other task remained pending. This establishes those two completion paths only; Agent #219 Plan-drift integration and complete Plan acceptance remain pending. Earlier bounded controller evidence is separate."
+    }
+  ],
+  "unknowns": [
+    "No live-provider performance/quality evidence was collected; fixtures are protocol/ownership evidence only.",
+    "Current terminal-run registry retention  need parent confirmation during architecture checkpoint; proposal uses existing record bounds and never deletes originals automatically.",
+    "Exact pure-TS import closure must be proven by emitted bundle dependency graph during implementation; source inventory alone cannot guarantee bundle removal."
+  ],
+  "preparationVerification": "Published Go API/source and actual Desk callsite inventory; each production migration requires the listed focused evidence. Internal ledger tests do not certify the pending cutover.",
+  "bindingPreparation": {
+    "status": "closed-production-purposes-registered; full-journey/certification/review acceptance pending",
+    "delivered": [
+      "actual Desk model relay with immutable session/connection/revision and post-queue admission",
+      "rooted Runtime stdio with existing project/Policy frame guards and bounded paired receipts",
+      "published Eino/delegate composition with canonical Host/Input/checkpoint/prompt provenance",
+      "scripted actual relay checks for OpenAI-compatible, Anthropic and Gemini",
+      "persisted-run operation/event identities across reconstructed capabilities and concurrent child calls",
+      "canceled unread/partial response Close retains unknown outcome and closes root admission",
+      "canonical root budget-pause acknowledgement with shared test count and real Eino allowance exhaustion",
+      "actual private Codex Manager/LazyManager capability through published Agent/delegate with retained account/session/Policy and Go-only physical admission/generation fences",
+      "hand-authored actual private Codex subprocess parent-child-parent, account reaping, exact invocation/tool receipts, current-authority refusal, bounded admission retries, cancellation, canonical interaction stops and unchanged provider-managed allowance policy",
+      "private saved-chat canonical input: exact statement/input, retained typed history/questions/attachments, transcript projection and validated chat preference precedence through actual API/Codex factories",
+      "server verified submitted document selections with signed receipt/digest/readable-page/partial-consent custody, distinct selection identities and rechecks at physical API/Codex dispatch including waits and child/parent continuation (Desk #566)",
+      "foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody, now used by registered closed production paths; bounded fixtures alone do not certify all product journeys",
+      "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
+      "private finite Policy host registry, six authenticated read/proposal tools, exact retained comparison/coverage, durable update/interpretation cards and actual API/native/shared browser reader evidence",
+      "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures",
+      "private finite test-design read/propose host tools, exact saved/draft review-only proposal persistence and actual API/native/shared browser reader evidence; scripted Runtime contract only, released support blocked by #582",
+      "private portable Dialect recipe contract/read/proposal tools with durable independent draft identity/readback, current authority and actual API/native/browser reader fixtures",
+      "private Dialect mapping/publication tools with exact read basis, pinned Runtime checks, finite retained review evidence and current-versus-historical projection; no publication grant or write",
+      "private Dialect records/activity and six-kind review-only action proposals bound to exact root recipe reads; typed originals, human review currency, owner history and shared action/browser readers",
+      "finite research-choice continuation through the saved chat/creation owner; current source/phase controls remain server-owned",
+      "canonical memory Use/Suggest snapshot/lifecycle and current person acceptance, including explicit proposal/store revision and identity guards; memory and Plan grant no implicit write or compute authority",
+      "at Desk 8886caf1afacaa8764386a44f49eb7818a68e711, three former controller gaps passed with fresh Go observations: API/native continuation readers, snapshots/SSE/session-end, and latest saved-pack mismatch/pass refresh; protocol/adapter fixtures are not another normal-New activation proof",
+      "at the same Desk head, both existing mounted usePackProposalSave server-hook cases passed with fresh Go proposal/recheck observations, mocked file read/write and HTTP check/suite responses; explicit Save/readback and dirty/stale/suite/mismatch vetoes are covered, not a full persisted page/editor Apply/Save journey",
+      "Desk #668: complete structured background input opens through the published runcontext.OpeningProjection (Agent #202), reducing only retained source previews and refusing before dispatch when they cannot fit; actual API/native boundary tests in background_opening_projection_test.go",
+      "Desk #662: Settings capability and generative ping probes run as server-owned settings observations (assistant_settings_observation*.go) with unchanged ceilings; the browser no longer calls the model"
+    ],
+    "pending": [
+      "complete current-head provider-managed binding and feature certification; unresolved native certification contract mismatch tracked by https://github.com/Judgment-Pack/judgment-pack-agent/issues/201",
+      "full integrated product journeys not established by bounded fixtures, including complete page/editor Apply and persisted server Save; current-head integration/bundle evidence, independent review and release acceptance",
+      "mandatory Desk #660 provider-wire numeric fidelity",
+      "Desk #582 remains intentionally v0.17.0-scoped: pinned Runtime v0.37.0 fact-type proposal support is unavailable (Runtime #274); preserve authored unavailable, unchanged facts/expectations, no fabricated advice and current pins",
+      "package-owned draft-edit scope not independently verified by the delivered Plan/memory and registration evidence"
+    ],
+    "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
+    "activation": "Normal Server construction installs assistantProductionExecutor for existing chat/creation, Brief and standalone author-pack/describe-pack/author-graph purposes; unknown purposes refuse. Saved chat uses SavedChatRun; Settings probes run as server-owned observations; complete release acceptance stays pending."
+  },
+  "requiredReleaseGates": [
+    "Delivered: Desk #668 background structured-input boundary: adopt released [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) projection after final canonical system/schema assembly and pass strict actual API/native boundary tests for complete protected fields, retained large sources and refusal before dispatch when permitted reduction cannot fit; preserve one physical request, budgets, admission and canonical guards",
+    "Desk #660 canonical proposal numeric fidelity",
+    "Delivered: Desk #662 bounded Settings probes and remaining direct transport",
+    "Complete actual bound API/native certification; preserve host authority and uncertainty guards",
+    "Complete source-bound journey, race, platform, i18n, security and release-diff review",
+    "Maintainer approval for each merge and release gate"
+  ]
+}

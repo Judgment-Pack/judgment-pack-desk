@@ -12,10 +12,16 @@ import { deskFetch } from '../files/client'
 const fetchMock=vi.mocked(deskFetch)
 afterEach(() => { cleanup();vi.useRealTimers();vi.restoreAllMocks() })
 let queued=false
+let refusal:string|undefined
+type Location={path:string;restartRequired:boolean;problem?:string;settingsConflict?:{file:string;digest:string;later:string[];canFinish:boolean;finished:boolean}}
+let location:Location={path:'/p',restartRequired:false}
+let finishBody:unknown
 beforeEach(() => {
- queued=false
+ queued=false;refusal=undefined;location={path:'/p',restartRequired:false};finishBody=undefined
  fetchMock.mockReset().mockImplementation(async (url,init) => {
-  if(url==='/api/desk-home')return Response.json({path:'',defaultPath:'/data/jpack-desk',current:{id:'desk-a',name:'Research',folder:'/old/research'},desks:[],canMove:true,restartRequired:queued,destination:queued?'/data/jpack-desk':undefined})
+  if(url==='/api/project-location')return Response.json(location)
+  if(url==='/api/project-location/finish-move'){finishBody=JSON.parse(init!.body as string);location={...location,restartRequired:true,problem:'The moved settings are back in place of the later edit in /config/desk.json. Restart Desk to finish the move, and then make this later edit again: the startup project (“project”).',settingsConflict:{...location.settingsConflict!,canFinish:false,finished:true}};return Response.json(location)}
+  if(url==='/api/desk-home')return Response.json({path:'',defaultPath:'/data/jpack-desk',current:{id:'desk-a',name:'Research',folder:'/old/research'},desks:[],canMove:refusal===undefined,restartRequired:queued,destination:queued?'/data/jpack-desk':undefined,moveRefusal:refusal})
   if(url.endsWith('/choose-folder'))return Response.json({destination:'/chosen/jpack-desk'})
   if(url.endsWith('/preview'))return Response.json({destination:JSON.parse(init!.body as string).destination,moves:[{label:'Research',from:'/old/research',to:'/data/jpack-desk/research'}],blockers:[],token:'preview-token'})
   if(url.endsWith('/move')){queued=true;return Response.json({restartRequired:true,destination:JSON.parse(init!.body as string).destination})}
@@ -43,6 +49,13 @@ it('uses a native chooser and reviewed exact paths, with no free-text destinatio
  const submitted=fetchMock.mock.calls.find(([url])=>url.endsWith('/move'))![1]!
  expect(JSON.parse(submitted.body as string)).toEqual({destination:'/data/jpack-desk',token:'preview-token'})
  expect(fetchMock.mock.calls.filter(([url])=>url.endsWith('/move'))).toHaveLength(1)
+})
+it('says in words why a Desk home move is not offered once storage is set up',async()=>{
+ refusal='Desk home moves are not available once storage is set up: in this version, storage does not move with a whole installation or a Desk home, so Desk keeps them where they are. Home moves come in a later version. Project moves remain available: to move a project that is not in a Desk home, use Move to… under Admin → General → Project location.'
+ mount();await screen.findByText('Files use separate locations')
+ expect(await screen.findByText(refusal)).toBeTruthy()
+ expect((screen.getByRole('button',{name:'Move…'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(fetchMock.mock.calls.some(([url])=>url.endsWith('/preview')||url.endsWith('/move'))).toBe(false)
 })
 it('keeps blockers next to the review and prevents confirmation',async()=>{
  mount();const dialog=await open();fireEvent.click(within(dialog).getByRole('button',{name:'Use default location'}))
@@ -138,4 +151,21 @@ it('shows a confirmed trigger refusal and leaves Working without uncertain recov
  expect(screen.queryByRole('button',{name:'Check move status'})).toBeNull()
  expect((screen.getByRole('button',{name:'Review move'}) as HTMLButtonElement).disabled).toBe(false)
  expect(fetchMock.mock.calls.filter(([url])=>url.endsWith('/move'))).toHaveLength(1)
+})
+it('offers the one choice for a move settings conflict and says the later edit to make again',async()=>{
+ location={path:'/moved/project',restartRequired:false,problem:'The settings in /config/desk.json were edited after the project was moved, so the move could not finish. Desk does not overwrite a later edit by itself. Under Admin → General → Desk home, choose Finish the move with the moved settings, restart Desk, and then make this later edit again: the startup project (“project”).',settingsConflict:{file:'/config/desk.json',digest:'d'.repeat(64),later:['the startup project (“project”)'],canFinish:true,finished:false}}
+ mount()
+ expect(await screen.findByText(/were edited after the project was moved/)).toBeTruthy()
+ expect(screen.getByText(/\/config\/desk\.json/)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'Finish the move with the moved settings'}))
+ expect(await screen.findByText(/Restart Desk to finish the move, and then make this later edit again: the startup project/)).toBeTruthy()
+ expect(finishBody).toEqual({digest:'d'.repeat(64)})
+ expect(screen.queryByRole('button',{name:'Finish the move with the moved settings'})).toBeNull()
+ expect(fetchMock.mock.calls.filter(([url])=>url==='/api/project-location/finish-move')).toHaveLength(1)
+})
+it('names a conflict it cannot finish without offering the choice',async()=>{
+ location={path:'/moved/project',restartRequired:false,problem:'The settings in /config/desk.json were edited after the project was moved, so the move could not finish. Desk does not overwrite a later edit by itself, and it cannot restore the settings the move found.',settingsConflict:{file:'/config/desk.json',digest:'d'.repeat(64),later:['“assistant”'],canFinish:false,finished:false}}
+ mount()
+ expect(await screen.findByText(/cannot restore the settings the move found/)).toBeTruthy()
+ expect(screen.queryByRole('button',{name:'Finish the move with the moved settings'})).toBeNull()
 })

@@ -603,12 +603,14 @@ func TestPolicySourceSyncDisconnectFencesPreparedReadDespiteLostReplyAndLedgerFa
 			<-entered
 			// Use the actual disconnect route and companion pipe. This companion reads
 			// its request and loses the reply; it does not access a real provider.
+			// Desk reads the catalog with --catalog-v5 (a v2 catalog still
+			// parses); only the disconnect request reaches the marker.
 			bundle := t.TempDir()
 			marker := filepath.Join(bundle, "disconnect-sent")
 			catalog := `{"version":2,"sources":[],"providers":[{"id":"google-drive","auth":"oauth","registration":"google-desktop","selection":"source-search","queryRequired":false,"operations":["disconnect"]}]}`
-			script := "#!/bin/sh\nif [ \"$1\" = '--catalog-v4' ]; then printf '%s' '" + catalog + "'; exit 0; fi\nread request\nprintf sent > '" + marker + "'\nexit 1\n"
+			script := "#!/bin/sh\nif [ \"$1\" = '--catalog-v5' ]; then printf '%s' '" + catalog + "'; exit 0; fi\nread request\nprintf sent > '" + marker + "'\nexit 1\n"
 			if !lost {
-				script = "#!/bin/sh\nif [ \"$1\" = '--catalog-v4' ]; then printf '%s' '" + catalog + "'; exit 0; fi\nread request\nprintf sent > '" + marker + "'\nid=$(printf '%s' \"$request\" | sed -n 's/.*\"id\":\"\\([^\"]*\\)\".*/\\1/p')\nprintf '{\"id\":\"%s\",\"result\":{\"disconnected\":true}}\\n' \"$id\"\n"
+				script = "#!/bin/sh\nif [ \"$1\" = '--catalog-v5' ]; then printf '%s' '" + catalog + "'; exit 0; fi\nread request\nprintf sent > '" + marker + "'\nid=$(printf '%s' \"$request\" | sed -n 's/.*\"id\":\"\\([^\"]*\\)\".*/\\1/p')\nprintf '{\"id\":\"%s\",\"result\":{\"disconnected\":true}}\\n' \"$id\"\n"
 			}
 			files := map[string]string{}
 			for _, name := range []string{"gateway", "adapter-document", "gateway-connections"} {

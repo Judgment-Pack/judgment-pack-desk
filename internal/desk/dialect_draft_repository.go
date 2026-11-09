@@ -32,10 +32,66 @@ const dialectDraftActiveLimit = 256
 const dialectDraftTotalLimit = 4096
 
 func (s *Server) draftRepository() dialectDraftRepository {
+	return s.draftRepositoryWithAuthority(nil)
+}
+
+// Storage binding belongs to the repository owner. The callback checks only
+// current authority and must never reacquire conversation/private-data locks.
+// File adapters check after queued locks and immediately before writes; injected
+// adapters keep the same pre/post observation fence without an implicit retry.
+func (s *Server) draftRepositoryWithAuthority(authorize func(context.Context) error) dialectDraftRepository {
 	if s.dialectDrafts != nil {
-		return s.dialectDrafts
+		if authorize == nil {
+			return s.dialectDrafts
+		}
+		return authorizedDialectDraftRepository{s.dialectDrafts, authorize}
 	}
-	return fileDialectDraftRepository{open: s.openDialectDrafts}
+	return fileDialectDraftRepository{open: s.openDialectDrafts, authorize: authorize}
+}
+
+type authorizedDialectDraftRepository struct {
+	repository dialectDraftRepository
+	authorize  func(context.Context) error
+}
+
+func (a authorizedDialectDraftRepository) List(ctx context.Context) ([]dialectDraftSummary, error) {
+	if err := a.authorize(ctx); err != nil {
+		return nil, err
+	}
+	out, err := a.repository.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = a.authorize(ctx); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+func (a authorizedDialectDraftRepository) Get(ctx context.Context, id string) (dialectDraftReply, error) {
+	if err := a.authorize(ctx); err != nil {
+		return dialectDraftReply{}, err
+	}
+	out, err := a.repository.Get(ctx, id)
+	if err != nil {
+		return dialectDraftReply{}, err
+	}
+	if err = a.authorize(ctx); err != nil {
+		return dialectDraftReply{}, err
+	}
+	return out, nil
+}
+func (a authorizedDialectDraftRepository) CompareAndSwap(ctx context.Context, d dialectDraftDocument, revision string) (dialectDraftReply, error) {
+	if err := a.authorize(ctx); err != nil {
+		return dialectDraftReply{}, err
+	}
+	out, err := a.repository.CompareAndSwap(ctx, d, revision)
+	if err != nil {
+		return dialectDraftReply{}, err
+	}
+	if err = a.authorize(ctx); err != nil {
+		return dialectDraftReply{}, err
+	}
+	return out, nil
 }
 func draftLockError(ctx context.Context, err error) error {
 	if ctx.Err() != nil {

@@ -3,7 +3,7 @@
 All production source in `web/` is copied from Desk head `c67f6096c4285a62726d7c39b4615ee2a99803c6`. Its `node_modules` symlink uses the dependencies supplied with the reviewed clean-room checkout. Only the two `cleanroom-*.test.*` files are added. No changes remain in the copied production `ConnectionsPane.tsx`.
 
 ```bash
-export PATH=/home/onword/.nvm/versions/node/v22.23.1/bin:$PATH
+export PATH=$HOME/.nvm/versions/node/v22.23.1/bin:$PATH
 cd /tmp/jp-foundation-cleanroom-20260922/desk-repros/web
 
 # Expected: one failing test, Continue button disabled after successful setup.

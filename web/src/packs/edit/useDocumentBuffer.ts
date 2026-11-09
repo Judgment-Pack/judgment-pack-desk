@@ -36,6 +36,8 @@ export interface DocumentBuffer {
   dirty: boolean
   /** Write the buffer, pushing one undo entry. */
   commit: (next: string, options?: { coalesceKey?: string }) => void
+  /** Compare against live refs and commit one action, without a render between them. */
+  commitIfCurrent: (expect: BufferIdentity, baseline: string, edit: (text: string) => string) => BufferApplication
   undo: () => void
   canUndo: boolean
   /** Put the buffer back to the base, and forget the stack. */
@@ -124,6 +126,8 @@ export interface BufferIdentity {
    */
   revision: number
 }
+
+export type BufferApplication = { applied: true; text: string } | { applied: false }
 
 /** One entry on the stack: the bytes, and what was being typed into. */
 interface Snapshot {
@@ -310,6 +314,15 @@ export function useDocumentBuffer(
     setText(next)
   }, [edited])
 
+  const commitIfCurrent = useCallback((expect: BufferIdentity, baseline: string, edit: (text: string) => string): BufferApplication => {
+    if (seeded.current !== expect.path || generationNow.current !== expect.generation ||
+      edits.current !== expect.revision || current.current !== baseline) return { applied: false }
+    const next = edit(current.current)
+    // No coalescing: every explicit application is exactly one undo action.
+    commit(next)
+    return { applied: true, text: next }
+  }, [commit])
+
   const undo = useCallback(() => {
     // **The updater is pure.** React is entitled to call an updater twice —
     // StrictMode does — and one that called another setter would fire that
@@ -430,6 +443,7 @@ export function useDocumentBuffer(
       text,
       dirty,
       commit,
+      commitIfCurrent,
       undo,
       canUndo: stack.length > 0,
       discard,
@@ -458,6 +472,7 @@ export function useDocumentBuffer(
       text,
       dirty,
       commit,
+      commitIfCurrent,
       undo,
       stack.length,
       discard,

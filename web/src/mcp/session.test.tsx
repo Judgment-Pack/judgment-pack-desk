@@ -1001,7 +1001,9 @@ describe('nothing is delivered after the session ends', () => {
                 serverInfo: { name: 'held', version: '0' }
               }
             : message.method === 'tools/list'
-              ? { tools: [{ name: 'get_schema', inputSchema: { type: 'object' } }] }
+              ? // The taxonomy the Runtime serves for get_schema (ADR-0027); a
+                // listing without it is refused before anything is sent.
+                { tools: [{ name: 'get_schema', inputSchema: { type: 'object' }, _meta: { operation: 'read', effect: 'read' } }] }
               : { content: [{ type: 'text', text: 'a tool answered' }] }
         const deliver = () =>
           onmessage?.({ jsonrpc: '2.0', id: message.id, result: answer })

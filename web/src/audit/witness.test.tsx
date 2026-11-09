@@ -262,7 +262,7 @@ describe('witness client', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/witness.go'), 'utf8')
-    expect(WITNESS_REASONS).toHaveLength(35)
+    expect(WITNESS_REASONS).toHaveLength(36)
     for (const reason of WITNESS_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

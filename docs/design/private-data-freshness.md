@@ -33,6 +33,27 @@ shared workspace storage use it. Admission, process ownership, long-lived work
 leases and worker claims remain nonblocking. Lock waits do not bypass revision,
 approval, file ownership or permission checks.
 
+Lazy default-history enrollment precedes the short transaction and holds the
+original FIFO turn through parent enrollment, creation, successor enrollment and
+synchronous drain. An ordinary first-use caller may join the exact same original
+construction and requester Server for at most 15 seconds from entry (or its
+earlier caller deadline). For one short-transaction acquisition, cumulative
+waiting behind unrelated or unclassified first-use heads consumes the same
+five-second allowance as the subsequent private transaction FIFO and OS-lock
+waiting. The remaining allowance is carried forward; the transaction does not
+start a fresh five-second budget. Matching first-use heads pause that short
+allowance, while their separate absolute 15-second join bound remains in force.
+Cancellation wins against readiness. These bounds end at acquisition; enrollment
+execution remains governed by the original caller context. Custody-owning callers
+remain try-only.
+
+The existing FIFO stores its original witnesses and scheduling metadata together.
+Every head transition accounts waiting time under the same mutex, with O(n) cost
+in queue depth and no retained transition history or parallel registry. Matching
+metadata grants no retain, admission, native permit or reusable result. After
+acquisition each caller freshly checks original authority and history selection;
+a timed-out or canceled waiter withdraws only its own entry.
+
 Regression coverage includes real file-lock contention, stale writes after
 waiting, cancellation, initial read recovery, cached-row retention, settings edit
 revisions, chat hydration, and disposable-browser journeys for Dialects and Tests.

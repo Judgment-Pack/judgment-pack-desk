@@ -66,7 +66,11 @@ func (s *Server) handleDeskHome(w http.ResponseWriter, r *http.Request) {
 	s.homeMove.mu.Lock()
 	destination := s.homeMove.destination
 	s.homeMove.mu.Unlock()
-	writeJSON(w, 200, map[string]any{"path": path, "defaultPath": deskApplicationDataPath(), "current": current, "desks": rows, "canMove": s.cfg.HomeMoveShutdown != nil, "restartRequired": s.homeMove.queued.Load(), "destination": destination})
+	status := map[string]any{"path": path, "defaultPath": deskApplicationDataPath(), "current": current, "desks": rows, "canMove": s.cfg.HomeMoveShutdown != nil, "restartRequired": s.homeMove.queued.Load(), "destination": destination}
+	if refusal := s.homeMoveStorageRefusal(); refusal != nil && !s.homeMove.queued.Load() {
+		status["canMove"], status["moveRefusal"] = false, refusal.Error()
+	}
+	writeJSON(w, 200, status)
 }
 func (s *Server) handleHomePreview(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
@@ -76,6 +80,10 @@ func (s *Server) handleHomePreview(w http.ResponseWriter, r *http.Request) {
 	var request projectMoveRequest
 	if err != nil || decodeDataJSON(raw, &request) != nil {
 		writeJSONCoded(w, 400, CodeBadRequest, "Choose a Desk home folder.")
+		return
+	}
+	if err = s.homeMoveStorageRefusal(); err != nil {
+		writeJSONCoded(w, 409, CodeStale, err.Error())
 		return
 	}
 	s.desksMu.Lock()

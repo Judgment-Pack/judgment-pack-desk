@@ -45,5 +45,5 @@ JPACK_BIN=/path/to/jpack PLAYWRIGHT_CHROME=/path/to/chrome \
 ```
 
 Port 8805 must be free. The browser check writes desktop, light and narrow
-screenshots under `/tmp/jp-controls-overview-*.png`. Full test, build and required
+screenshots under `<scratch>/jp-controls-overview-*.png`. Full test, build and required
 containment results are recorded in the PR.

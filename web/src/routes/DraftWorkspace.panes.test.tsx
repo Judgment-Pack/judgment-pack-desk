@@ -7,7 +7,7 @@ import { emptySuite } from '../packs/test-workspace/model'
 import { connected, renderConnected, stubClient } from '../testing/harness'
 import type { Chat } from '../chat/store'
 import type { PackDraft } from '../packs/drafts/model'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 
 const state = {...INITIAL_STATE, candidates: [{revision: 1, digest: 'digest', text: '{}', document: {title: 'Example', version: '1', rules: [], outcomes: []}}]} as unknown as typeof INITIAL_STATE
 const suite = emptySuite()
