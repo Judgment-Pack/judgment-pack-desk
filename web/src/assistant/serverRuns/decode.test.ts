@@ -1,6 +1,6 @@
 import approvalRecords from './fixtures/approval-records.json'
 import approval from './fixtures/approval.json'
-import {approvalShownArguments,approvalShownDigest} from '@judgment-pack/harness/contract'
+import {approvalShownArguments,approvalShownDigest,readRunEvent} from '@judgment-pack/harness/contract'
 import {decodeEvent} from './decode'
 import { describe, expect, it } from 'vitest'
 import { readExecution } from '@judgment-pack/harness/execution/state'
@@ -162,4 +162,13 @@ it('refuses unknown retained question members, wrong event type and changed answ
   (v:ReturnType<typeof retainedAnswerSnapshot>)=>{v.answerHistory[0].answer.questionDigest='a'.repeat(64)},
   (v:ReturnType<typeof retainedAnswerSnapshot>)=>{v.answerHistory[0].answer.selected=['missing']},
  ]){const successor=retainedAnswerSnapshot({...answer.events[0].event,version:1});edit(successor);expect(()=>decodeSnapshot(successor,binding)).toThrow()}
+})
+
+// A type the canonical reader accepts is still not a semantic event: progress
+// and checkpoint frames never reach the retained event list.
+it('refuses canonical events that are not semantic run events',()=>{
+ const progress={type:'message_progress',text:'partial answer'}
+ expect(()=>readRunEvent(progress)).not.toThrow()
+ expect(()=>decodeEvent({id:'progress-event',event:progress})).toThrow()
+ expect(decodeEvent({id:'message-event',event:{type:'message',text:'partial answer'}}).event.type).toBe('message')
 })
