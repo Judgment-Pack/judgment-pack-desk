@@ -112,3 +112,13 @@ save is reported; a registry write is likewise read back and held to its bytes,
 and is refused before writing where its reader would refuse it. Page tests cover
 adding and renaming connections, independent defaults, selection controls and
 grouped composer choices. Provider inference is not sent during these checks.
+
+The chat's Adversarial review control selects Off, Auto or On, or inherits the
+project's review default in `jpack-assistant.json` (`critic`, profile versions 1
+and 2). The canonical policy table supplies Auto when neither is set; Admin
+shows that fallback read-only. Optional saved-chat `criticReasoning` selects a
+capability-supported tier; leaving it absent uses the author's reasoning.
+Explicit legacy `adversarialReview` booleans keep their meaning; chats without
+either control inherit. Run reports and task events show the canonical decision,
+including why a review was skipped, and preserve it on reload. These settings
+never grant actions, tools or compute.

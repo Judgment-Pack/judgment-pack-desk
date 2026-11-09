@@ -149,11 +149,13 @@ func TestAttachmentCustodyRetentionAndBackup(t *testing.T) {
 		t.Fatal("chat storage broke")
 	}
 }
+
+// One Desk runs per installation, sealed to its first project, so the other
+// project runs in an installation of its own.
 func TestAttachmentIsolationAndInvalidBytes(t *testing.T) {
-	shared := t.TempDir()
-	first, a, _ := assistantServerIn(t, shared)
+	first, a, _ := assistantServer(t)
 	enableTestDocuments(t, first)
-	_, b, _ := assistantServerIn(t, shared)
+	_, b, _ := assistantServer(t)
 	body := documentBody(t, "original")
 	status, _, _ := documentRequest(t, a, "PUT", testAttachmentID, "absent", body)
 	if status != 200 {

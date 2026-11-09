@@ -1,0 +1,212 @@
+{
+  "release": "v0.9.1",
+  "sourceRevision": "866b7177ebddb6b9628bc3925a4e0bc43a5fc197",
+  "predecessorRelease": "v0.9.0",
+  "predecessorRevision": "9ce6c897b4abf484f50604d81422a26d730f9ed7",
+  "harnessArchiveSha256": "71b8b5aa286af9e8756f9e3772710ff2a8ae113906a4d53e288abacc18f76fbf",
+  "scope": "Frozen released contract inventory; source schema directory differs from selected schema files bundled in npm. This is not a cutover or certification claim.",
+  "schemas": [
+    {
+      "name": "approval",
+      "sha256": "200beb046c2535057903c1f6a0c79da37792ecfae057daf53a97ab3424a51e66",
+      "changedSince090": false
+    },
+    {
+      "name": "budget",
+      "sha256": "0c96a917270523af3b0d31f31829909ed78a32f34647c5a431de39fea8248fe8",
+      "changedSince090": true
+    },
+    {
+      "name": "capability",
+      "sha256": "0772e7e1e9c7fd7d30b169e2012c53f6efb7c7808bd84e3d75478c92a17214f4",
+      "changedSince090": false
+    },
+    {
+      "name": "checkpoint",
+      "sha256": "0ee38b6e36fba51660696b100b939549cfd31fca627afcc7a19a1317427d4480",
+      "changedSince090": true
+    },
+    {
+      "name": "corpus-entry",
+      "sha256": "1d2fb6d448747a0fa3b360adee42ef3b3b89ac6b323d8ce1c80dbb70afed63c3",
+      "changedSince090": false
+    },
+    {
+      "name": "delegated-task",
+      "sha256": "672d23f17eab4bca11dfbed454975a61b0ff7834ccfcbb66d95ab51d539af02c",
+      "changedSince090": false
+    },
+    {
+      "name": "export",
+      "sha256": "62eb5605b812bd229d8e0d720207dce31bda2d9a11362429e81252a278c1cc0a",
+      "changedSince090": false
+    },
+    {
+      "name": "failure",
+      "sha256": "bb9d09adff64cd1c4878f22ef2fcb1354955ecc4e6732e48f1f5ea0e87c4c320",
+      "changedSince090": false
+    },
+    {
+      "name": "memory",
+      "sha256": "3ba9ad715dcb9437dcc426d5b54877a6980355e2011ea5fc5151df6352b32cbe",
+      "changedSince090": true
+    },
+    {
+      "name": "policy",
+      "sha256": "3a695837d16970c3b3202695dd32e7704397caa4dd020f9e6e4cf19c684b3242",
+      "changedSince090": false
+    },
+    {
+      "name": "provenance",
+      "sha256": "e68e4fd5231e4e621372a8d1827c58e869be31a31051730c55c6455d9999aadc",
+      "changedSince090": false
+    },
+    {
+      "name": "question",
+      "sha256": "00ec47bbe042dcb4241931bfcafa804d3e166dc709b636f39942d20895434b81",
+      "changedSince090": false
+    },
+    {
+      "name": "run-event",
+      "sha256": "c51ea8f2cc2ea0418e5d665f932bf59cb147359ff1e7f601911ac23d24a0748e",
+      "changedSince090": false
+    },
+    {
+      "name": "skill",
+      "sha256": "562c65a7b2110d0aa763319a28960a04fcde49784feacb5ffa3d07ccd9c77d8d",
+      "changedSince090": false
+    },
+    {
+      "name": "subagent",
+      "sha256": "99121ef0e8df45c943ad8fad632d03fe47fe4349b43d1064898e97ffef17f6e5",
+      "changedSince090": false
+    },
+    {
+      "name": "tool-call",
+      "sha256": "f2095f1feb54342d47ab7e3b174ac83ee582a288cf0bb820102b40885c8047ba",
+      "changedSince090": false
+    },
+    {
+      "name": "tool-offer",
+      "sha256": "680dfed750a57e1cf7cc1b859e6060af23cb070e601b9321a1a1594d5b2c6101",
+      "changedSince090": true
+    },
+    {
+      "name": "tool-result",
+      "sha256": "e9afd39cff629dd0562b7c6fc211f17c193c64d41afff8cb33c716134d21da5b",
+      "changedSince090": false
+    },
+    {
+      "name": "usage",
+      "sha256": "27d58f4f6f6dcc70dd420b4866678ce6e8f98414da24c57a8978eed9a1d8f725",
+      "changedSince090": false
+    }
+  ],
+  "checkpointMembers": [
+    "schema",
+    "version",
+    "digest",
+    "retainUntil",
+    "id",
+    "requestKey",
+    "phase",
+    "status",
+    "unit",
+    "used",
+    "limit",
+    "grants",
+    "plan",
+    "explanation",
+    "operations",
+    "completions",
+    "context",
+    "reason",
+    "testCalls",
+    "delegation",
+    "handoff",
+    "approval",
+    "prompts",
+    "sources",
+    "skills",
+    "critic",
+    "policy",
+    "crossProvider",
+    "compaction",
+    "memories",
+    "draft",
+    "outputGuard",
+    "records",
+    "sourceIdentities",
+    "steers",
+    "usage",
+    "failover",
+    "childUsage",
+    "requestCap"
+  ],
+  "checkpointRequired": [
+    "version",
+    "id",
+    "requestKey",
+    "phase",
+    "status",
+    "unit",
+    "used",
+    "limit",
+    "grants",
+    "plan",
+    "explanation",
+    "operations",
+    "context"
+  ],
+  "eventKinds": [
+    "execution_checkpoint",
+    "budget_paused",
+    "approval_requested",
+    "compacted",
+    "skill_loaded",
+    "skill_unloaded",
+    "retry",
+    "response_recovery",
+    "delegation_requested",
+    "delegated_task",
+    "user_question",
+    "reasoning",
+    "message",
+    "message_progress",
+    "tool_call",
+    "tool_result",
+    "guardrail",
+    "thinking_unavailable",
+    "critic_decided",
+    "critique",
+    "proposal",
+    "error",
+    "end",
+    "policy_resolved",
+    "memory_proposed",
+    "memory_recalled",
+    "edit_applied",
+    "edit_refused",
+    "output_guarded",
+    "export_written",
+    "steered",
+    "connection_switched",
+    "usage",
+    "recorded"
+  ],
+  "changes": {
+    "budget": [
+      "Retired adversarialReview removed; canonical critic controls remain."
+    ],
+    "tool-offer": [
+      "Retired adversarialReview removed; canonical critic and criticProject documented."
+    ],
+    "checkpoint": [
+      "Optional requestCap added; API immutable cap 1 through 20, native cap absent."
+    ],
+    "memory": [
+      "Answer accepts typed record arrays rather than bare text.",
+      "Metadata-only lifecycleUpdate and lifecycleAnswer definitions added."
+    ]
+  }
+}

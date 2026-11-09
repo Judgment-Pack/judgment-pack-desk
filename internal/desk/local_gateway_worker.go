@@ -35,6 +35,7 @@ func executableName(name string) string {
 // lives. EOF also happens when Desk crashes: this works without PID reuse checks,
 // platform-specific parent-death signals, a shell, or a background daemon.
 func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
+	privateWorkerFiles()
 	reader := bufio.NewReader(input)
 	line, err := reader.ReadSlice('\n')
 	if err != nil {

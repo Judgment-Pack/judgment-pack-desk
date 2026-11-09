@@ -1,0 +1,12 @@
+[
+ {"name":"first original slot","positionJSON":"0","valid":true},
+ {"name":"last original slot","positionJSON":"1","valid":true},
+ {"name":"legacy absent slot","valid":true},
+ {"name":"negative slot","positionJSON":"-1","valid":false},
+ {"name":"outside combined suite","positionJSON":"2","valid":false},
+ {"name":"fractional slot","positionJSON":"0.5","valid":false},
+ {"name":"decimal slot token","positionJSON":"1.0","valid":false},
+ {"name":"exponent slot token","positionJSON":"1e0","valid":false},
+ {"name":"null slot","positionJSON":"null","valid":false},
+ {"name":"string slot","positionJSON":"\"0\"","valid":false}
+]

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "valid": {
+    "runId": "arun_ffffffffffffffffffffffffffffffff",
+    "runRevision": "9007199254740993",
+    "recoveryRevision": "18446744073709551615",
+    "reads": [
+      {"operationId":"unseen","originalOutcome":"unknown","backingState":"not-observed","reason":"budget-unresolved","ordinal":"0","storageState":"unresolved","canInspect":false},
+      {"operationId":"found","originalOutcome":"interrupted","backingState":"present-valid","ordinal":"9007199254740993","storageState":"accounted-retained","canInspect":true},
+      {"operationId":"missing","originalOutcome":"failed","backingState":"absent","ordinal":"1","storageState":"accounted-absent","canInspect":true},
+      {"operationId":"changed","originalOutcome":"completed","backingState":"corrupt","ordinal":"2","storageState":"unresolved","canInspect":false},
+      {"operationId":"no-owner","originalOutcome":"interrupted","backingState":"unavailable","reason":"owner-unavailable","ordinal":"3","storageState":"unresolved","canInspect":false},
+      {"operationId":"no-provider","originalOutcome":"interrupted","backingState":"unavailable","reason":"provider-unavailable","ordinal":"4","storageState":"unresolved","canInspect":false},
+      {"operationId":"foreign","originalOutcome":"interrupted","backingState":"unavailable","reason":"ownership-mismatch","ordinal":"5","storageState":"unresolved","canInspect":false},
+      {"operationId":"io","originalOutcome":"interrupted","backingState":"unavailable","reason":"storage-io","ordinal":"6","storageState":"unresolved","canInspect":true},
+      {"operationId":"close","originalOutcome":"interrupted","backingState":"unavailable","reason":"close-uncertain","ordinal":"7","storageState":"unresolved","canInspect":true},
+      {"operationId":"cancel","originalOutcome":"interrupted","backingState":"unavailable","reason":"cancelled","ordinal":"8","storageState":"unresolved","canInspect":true},
+      {"operationId":"quota","originalOutcome":"interrupted","backingState":"unavailable","reason":"budget-unresolved","ordinal":"18446744073709551615","storageState":"unresolved","canInspect":false}
+    ]
+  },
+  "mutations": [
+    {"name":"missing-run-revision","path":["runRevision"],"remove":true},
+    {"name":"null-revision","path":["recoveryRevision"],"value":null},
+    {"name":"numeric-revision","path":["recoveryRevision"],"value":9007199254740992},
+    {"name":"overflow","path":["recoveryRevision"],"value":"18446744073709551616"},
+    {"name":"leading-zero","path":["runRevision"],"value":"01"},
+    {"name":"fraction","path":["runRevision"],"value":"1.5"},
+    {"name":"foreign-run","path":["runId"],"value":"arun_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+    {"name":"unknown-root","path":["receipt"],"value":"forged"},
+    {"name":"duplicate-operation","path":["reads","1","operationId"],"value":"unseen"},
+    {"name":"unknown-outcome","path":["reads","1","originalOutcome"],"value":"recovered-success"},
+    {"name":"unknown-state","path":["reads","1","backingState"],"value":"complete"},
+    {"name":"caught-prose","path":["reads","4","reason"],"value":"provider body"},
+    {"name":"reason-missing","path":["reads","4","reason"],"remove":true},
+    {"name":"empty-reason","path":["reads","4","reason"],"value":""},
+    {"name":"unsafe-number-ordinal","path":["reads","1","ordinal"],"value":9007199254740992},
+    {"name":"false-absence","path":["reads","2","ordinal"],"value":"0"},
+    {"name":"missing-boolean","path":["reads","1","canInspect"],"remove":true},
+    {"name":"string-boolean","path":["reads","1","canInspect"],"value":"true"},
+    {"name":"unknown-storage","path":["reads","1","storageState"],"value":"released"},
+    {"name":"unknown-row","path":["reads","1","result"],"value":{"success":true}}
+  ]
+}

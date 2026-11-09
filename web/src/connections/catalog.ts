@@ -1,9 +1,10 @@
+import {validCatalogV5,parseCatalogText,type SourceOwner,type ProviderOwner,type CatalogTaxonomy} from './catalog-v5'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { language } from '../i18n'
 import { answer, deskFetch } from '../files/client'
 import { CONNECTIONS_KEY, connectionStatusOptions, type ConnectionProvider } from './client'
 
-export interface ConnectionDescriptor {
+export interface ConnectionDescriptor extends ProviderOwner {
  id: ConnectionProvider
  auth: 'oauth' | 'local-folder' | 'credentials'
  registration: 'google-desktop' | 'automatic' | 'none' | 'form'
@@ -15,10 +16,10 @@ export interface ConnectionDescriptor {
  presentation?: { icon: string; name: string; description: Localized; instructions: Localized }
  setup?: SetupField[]
  authorizationEndpoints?: string[]
- source?: { id: string; shape: 'command' | 'http' | 'mcp'; record: 'drive-v1' | 'mail-v1' | 'note-v1' | 'resource-v1'; adapter?: string; capabilities?: ResearchCapability[] }
+ source?: SourceOwner & { id: string; shape: 'command' | 'http' | 'mcp'; record: 'drive-v1' | 'mail-v1' | 'note-v1' | 'resource-v1'; adapter?: string; capabilities?: ResearchCapability[] }
 }
 export type ResearchCapability = 'answer' | 'search' | 'page'
-export interface ResearchSourceContract { id: string; adapter?: string; capabilities: ResearchCapability[] }
+export interface ResearchSourceContract extends SourceOwner { id: string; adapter?: string; capabilities: ResearchCapability[] }
 export function validResearchCapabilities(raw: unknown): raw is ResearchCapability[] {
  if (!Array.isArray(raw)) return false
  const order: readonly unknown[] = ['answer','search','page']
@@ -62,14 +63,17 @@ const handlers = {
 } as const
 
 export function parseConnectionCatalog(raw: unknown) {
- const value = raw as { version?: unknown; providers?: unknown; sources?: unknown }
- if (!value || (value.version !== 2 && value.version !== 3 && value.version !== 4) || !Array.isArray(value.sources) || !Array.isArray(value.providers) || value.providers.length > 32) throw new Error('Invalid connection catalog')
+ if (typeof raw === 'string') raw = parseCatalogText(raw)
+ if (new TextEncoder().encode(JSON.stringify(raw)).length > 128 << 10) throw new Error('Invalid connection catalog')
+ const value = raw as { version?: unknown; providers?: unknown; sources?: unknown; discoveryTaxonomy?: CatalogTaxonomy }
+ if (!value || (value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5) || !Array.isArray(value.sources) || !Array.isArray(value.providers) || value.providers.length > 32) throw new Error('Invalid connection catalog')
+ if (value.version === 5 && !validCatalogV5(raw)) throw new Error('Invalid connection catalog')
  const seen = new Set<string>(), providers: ConnectionDescriptor[] = [], unsupported: ConnectionDescriptor[] = []
  for (const item of value.providers) {
-  if (!item || typeof item.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(item.id) || seen.has(item.id) || typeof item.queryRequired !== 'boolean' || !Array.isArray(item.operations) || item.operations.length > 32 || !item.operations.every((op: unknown) => typeof op === 'string' && /^[a-z][a-z0-9-]{0,47}$/.test(op)) || new Set(item.operations).size !== item.operations.length) throw new Error('Invalid connection catalog')
+  if (!item || typeof item.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(item.id) || seen.has(item.id) || typeof item.queryRequired !== 'boolean' || !Array.isArray(item.operations) || value.version === 5 && item.operations.length === 0 || item.operations.length > 32 || !item.operations.every((op: unknown) => typeof op === 'string' && /^[a-z][a-z0-9-]{0,47}$/.test(op)) || new Set(item.operations).size !== item.operations.length) throw new Error('Invalid connection catalog')
   seen.add(item.id)
-  if (value.version === 3 || value.version === 4) {
-   if (!validPresentation(item) || value.version === 4 && !validResearchSource(item.source,true)) throw new Error('Invalid connection catalog')
+  if (value.version === 3 || value.version === 4 || value.version === 5) {
+   if (!validPresentation(item) || (value.version === 4 || value.version === 5) && !validResearchSource(item.source,true)) throw new Error('Invalid connection catalog')
    if (item.protocol === "web-search-v1" && item.source?.id === "web-search" && item.source.record === "web-search-v1") continue
    if (supported(item)) providers.push(item); else unsupported.push(item)
    continue
@@ -81,17 +85,21 @@ export function parseConnectionCatalog(raw: unknown) {
  }
  const sources = value.sources as { id?: unknown; input?: unknown; mediaTypes?: unknown; maxBytes?: unknown }[]
  if (sources.length > 32 || new Set(sources.map(s => s?.id)).size !== sources.length || sources.some(s => !s || typeof s.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(s.id) || typeof s.input !== 'string' || !Array.isArray(s.mediaTypes) || !Number.isSafeInteger(s.maxBytes))) throw new Error('Invalid source catalog')
- if (value.version === 4 && sources.some(s=>!validResearchSource(s,false))) throw new Error('Invalid source catalog')
+ if ((value.version === 4 || value.version === 5) && sources.some(s=>!validResearchSource(s,false))) throw new Error('Invalid source catalog')
  const web = sources.some(s => s.id === 'web' && s.input === 'url' && s.maxBytes === 4 << 20 && ['text/html','text/plain','application/pdf'].every(type => (s.mediaTypes as string[]).includes(type)))
  const discovery = sources.some(s=>s.id==='web-discovery' && s.input==='url' && s.maxBytes===1<<20 && (s.mediaTypes as string[]).includes('application/vnd.jpack.web-discovery+json'))
  const webSearch = sources.some(s=>s.id==='web-search' && s.input==='query' && s.maxBytes===1<<20 && (s.mediaTypes as string[]).includes('application/vnd.jpack.web-search+json'))
- return { providers, web, discovery, webSearch, ...(value.version === 4 ? {researchSources: [...value.providers.map(item=>item.source), ...sources] as ResearchSourceContract[]} : {}), ...(unsupported.length ? { unsupported } : {}) }
+ return { providers, web, discovery, webSearch, ...(value.version === 5 ? {discoveryTaxonomy: value.discoveryTaxonomy} : {}), ...((value.version === 4 || value.version === 5) ? {researchSources: [...value.providers.map(item=>item.source), ...sources] as ResearchSourceContract[]} : {}), ...(unsupported.length ? { unsupported } : {}) }
 }
 
 export function useConnections(enabled: boolean) {
  const catalog = useQuery({
   queryKey: [...CONNECTIONS_KEY, 'catalog'], enabled, retry: false, staleTime: 30_000,
-  queryFn: async ({ signal }) => parseConnectionCatalog(await answer<unknown>(await deskFetch('/api/connections/catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal }))),
+  queryFn: async ({ signal }) => {
+   const response = await deskFetch('/api/connections/catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal })
+   if (!response.ok) return parseConnectionCatalog(await answer<unknown>(response))
+   return parseConnectionCatalog(await response.text())
+  },
  })
  // A failed refresh must not keep previously advertised actions active.
  const descriptors = enabled && !catalog.isError ? catalog.data?.providers ?? [] : []

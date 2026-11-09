@@ -16,6 +16,9 @@ var evaluationJobID = regexp.MustCompile(`^job_[a-f0-9]{32}$`)
 // Keep this call outside journal transactions. Retain its acknowledgement before
 // submitting any rows, and never adopt a response for a different reviewed intent.
 func (s *Server) ensureEvaluationJob(ctx context.Context, checkpoint *evaluationCheckpoint, b *inputEvaluation) error {
+	if err := requireOrdinaryInputQualification(b.Recipe.Qualification); err != nil {
+		return err
+	}
 	if checkpoint.failure != nil {
 		return checkpoint.failure
 	}

@@ -169,14 +169,25 @@ type rotationRig struct {
 // stand-in to generate, read and rotate keys by seed.
 func newRotationRig(t *testing.T, id, config string) *rotationRig {
 	t.Helper()
+	return newRotationRigOn(t, id, config, "")
+}
+
+// newRotationRigOn is newRotationRig started on project, where it is not
+// empty. Rigs that share a configuration share its project too: storage
+// belongs to the project an installation was first started on.
+func newRotationRigOn(t *testing.T, id, config, project string) *rotationRig {
+	t.Helper()
 	t.Setenv("JPACK_CONFIG", "")
 	rig := newAuditRig(t, withAuditVersions)
 	rig.answers(t, 0, auditValidReport)
 	if config == "" {
 		config = t.TempDir()
 	}
+	if project == "" {
+		project = t.TempDir()
+	}
 	logged := &bytes.Buffer{}
-	s, ts := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: rig.bin, Token: testToken, DeskConfigDir: config, Logger: log.New(logged, "", 0)})
+	s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, DeskConfigDir: config, Logger: log.New(logged, "", 0)})
 	t.Cleanup(func() { s.Close() })
 	t.Cleanup(ts.Close)
 	seed := filepath.Join(config, "secrets", "signing", id+seedSuffix)
@@ -825,6 +836,8 @@ func TestARotationsAnswersNameNoPath(t *testing.T) {
 		t.Skip("this file system refuses the names")
 	}
 	signing := filepath.Join(config, "secrets", "signing")
+	// One installation, one project: each case starts Desk on it again.
+	project := t.TempDir()
 	leaks := func(t *testing.T, what, said string) {
 		t.Helper()
 		for _, part := range []string{"SECRET", "TAIL", "KEYS", "DIR", "(owner)", root, runtimePrints(config)} {
@@ -844,7 +857,7 @@ func TestARotationsAnswersNameNoPath(t *testing.T) {
 			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The next key at … is refused: the directory … is not the one held; also … and (…). " + nextArchivedWords},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := newRotationRig(t, tc.id, config)
+			r := newRotationRigOn(t, tc.id, config, project)
 			r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 			if tc.generate != "" {
 				generatingAs(t, r.rig.calls, tc.generate)
@@ -867,7 +880,7 @@ func TestARotationsAnswersNameNoPath(t *testing.T) {
 	t.Run("a rotation that did not finish", func(t *testing.T) {
 		const id = "c4000000000000000000000000000003"
 		next := filepath.Join(signing, id+nextSeedSuffix)
-		r := newRotationRig(t, id, config)
+		r := newRotationRigOn(t, id, config, project)
 		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 		if os.WriteFile(filepath.Join(signing, id+rotatingSuffix), nil, 0o600) != nil || os.WriteFile(next, []byte("not a seed\n"), 0o600) != nil {
 			t.Fatal("could not leave a rotation unfinished")

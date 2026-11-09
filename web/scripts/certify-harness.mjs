@@ -63,9 +63,17 @@ const vitest = resolve(web, 'node_modules/.bin/vitest')
 const reports = mkdtempSync(join(tmpdir(), 'certify-harness-'))
 const config = resolve(web, 'vitest.certification.config.mts')
 
-function run(args, report, selectedConfig = config) {
+// **The package's own suite runs from the package's directory.** An upstream
+// defect in Agent v0.13.2: certification/scenarios.test.ts reads
+// `certification/runtime.json` relative to the working directory rather than to
+// its own file, so it finds the recording only when vitest starts in
+// packages/harness, as the package's own certify.mjs does. The config names
+// its root (web/) and every path absolutely, so only that read sees the change.
+// The Desk's own credential row still runs from web/. Drop the cwd once the
+// package resolves the file from its own location.
+function run(args, report, selectedConfig = config, cwd = web) {
   const result = spawnSync(vitest, ['run', '--maxWorkers=2', '--config', selectedConfig, ...args, '--reporter=default', '--reporter=json', `--outputFile.json=${report}`], {
-    cwd: web,
+    cwd,
     stdio: 'inherit',
     env: { ...process.env, HARNESS_SOURCE: pkg }
   })
@@ -113,7 +121,7 @@ try {
     if (status !== 0) break
     console.log(`certify-harness ${adapter}: vitest run ${args.join(' ')}`)
     const report = join(reports, `run-${index}.json`)
-    const code = run(args, report)
+    const code = run(args, report, config, pkg)
     if (code !== 0) status = code
     checks += ownChecks(report)
   }

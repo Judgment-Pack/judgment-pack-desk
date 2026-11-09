@@ -3,10 +3,12 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	exchangeCatalog "github.com/Judgment-Pack/judgment-pack-desk/internal/exchange"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +87,7 @@ func TestPreparationReplayFailureAcceptsOnlyMatchingClosedReports(t *testing.T) 
 		code      int
 		raw, want string
 	}{
+		{1, `{"result":"refusal","refusal":"profile-unsupported"}`, "Invalid preparation verification report"},
 		{1, `{"result":"refusal","refusal":"kind-unread"}`, "Offline preparation check: kind-unread"},
 		{2, `{"result":"finding","finding":"acquisition-stale"}`, "Offline preparation check: acquisition-stale"},
 		{1, `{"result":"finding","refusal":"kind-unread"}`, "Invalid preparation verification report"},
@@ -94,8 +97,43 @@ func TestPreparationReplayFailureAcceptsOnlyMatchingClosedReports(t *testing.T) 
 		{3, `{"result":"refusal","refusal":"input-malformed"}`, "Invalid preparation verification report"},
 		{1, `null`, "Invalid preparation verification report"},
 	} {
-		if err := preparationReplayFailure([]byte(tc.raw), tc.code); err.Error() != tc.want {
+		if err := preparationReplayFailure([]byte(tc.raw), tc.code, 1); err.Error() != tc.want {
 			t.Errorf("%s (exit %d): %v", tc.raw, tc.code, err)
+		}
+	}
+	// Interface 2 extends the refusal vocabulary only.
+	for _, refusal := range []string{"capability-unsupported", "profile-unsupported", "kind-unread"} {
+		raw := `{"result":"refusal","refusal":"` + refusal + `"}`
+		if err := preparationReplayFailure([]byte(raw), 1, 2); err.Error() != "Offline preparation check: "+refusal {
+			t.Errorf("interface 2 refusal %s: %v", refusal, err)
+		}
+	}
+	if err := preparationReplayFailure([]byte(`{"result":"finding","finding":"profile-unsupported"}`), 2, 2); err.Error() != "Invalid preparation verification report" {
+		t.Error("interface 2 accepted a refusal code as a finding", err)
+	}
+}
+
+func TestPreparationVerifierCapabilitiesAcceptsInterfacesOneAndTwo(t *testing.T) {
+	caps := func(version, report int) string {
+		return fmt.Sprintf(`{"command":"verify-preparation","version":%d,"instant":"preparation.verifiedAt","dialectVersions":[2,3],"formatVersions":["2.0.0","3.0.0"],"report":{"version":%d,"binding":["not-checked"],"exitStatus":{"reading":0,"refusal":1,"finding":2,"couldNotRun":3}}}`, version, report)
+	}
+	for _, tc := range []struct {
+		raw  string
+		code int
+		ok   bool
+	}{
+		{caps(1, 1), 0, true},
+		{caps(2, 2), 0, true},
+		{caps(2, 1), 0, false},
+		{caps(1, 2), 0, false},
+		{caps(3, 3), 0, false},
+		{caps(2, 2), 3, false},
+		{strings.Replace(caps(2, 2), `"not-checked"`, `"checked"`, 1), 0, false},
+		{strings.Replace(caps(2, 2), `"couldNotRun":3`, `"couldNotRun":4`, 1), 0, false},
+		{`null`, 0, false},
+	} {
+		if _, ok := preparationVerifierCapabilities([]byte(tc.raw), tc.code); ok != tc.ok {
+			t.Errorf("%s (exit %d): accepted %v", tc.raw, tc.code, ok)
 		}
 	}
 }

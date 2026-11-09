@@ -163,7 +163,55 @@ func TestNamedDeskRegistryRejectsSymlinks(t *testing.T) {
 	}
 }
 
+// A named desk moved outside Desk and opened directly is another project to
+// an installation without a Desk home, which v0.14.0 keeps sealed to the
+// project Desk was first started on: the start is refused in words, and the
+// moved desk's conversation data is left in the moved folder as it was.
 func TestNamedDeskMovesWithItsConversationData(t *testing.T) {
+	requireStorageLine(t)
+	s, ts, _ := assistantServer(t)
+	row := createTestDesk(t, ts, "Portable")
+	child := s.desks[row.ID]
+	store, err := child.openChatData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := []byte(`{"version":1,"chats":[{"id":"preserved"}]}`)
+	if err = writePrivateData(store.root, child.conversationName(), original); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := filepath.Rel(row.Folder, store.location.Path)
+	store.root.Close()
+	if err != nil || !pathContains(row.Folder, store.location.Path) {
+		t.Fatal("data is not in the desk's folder", store.location.Path, err)
+	}
+	name := child.conversationName()
+	moved := filepath.Join(t.TempDir(), "renamed-desk")
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Rename(row.Folder, moved); err != nil {
+		t.Fatal(err)
+	}
+	refusedBySeal(t, s, moved)
+	root, err := os.OpenRoot(filepath.Join(moved, stored))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	data, err := readPrivateData(root, name, 4096)
+	if err != nil || !bytes.Equal(data, original) {
+		t.Fatalf("history changed by the refused start: %s %v", data, err)
+	}
+}
+
+// With the storage line off there is no first-project seal (v0.13.2): a
+// named desk moved outside Desk and opened directly adopts the desk's
+// identity, and its conversation data moves with it.
+func TestNamedDeskMovesWithItsConversationDataStorageLineOff(t *testing.T) {
+	if storageLineOn() {
+		t.Skip("v0.13.2 behaviour, with the storage line off; TestNamedDeskMovesWithItsConversationData covers it on")
+	}
 	s, ts, _ := assistantServer(t)
 	row := createTestDesk(t, ts, "Portable")
 	child := s.desks[row.ID]

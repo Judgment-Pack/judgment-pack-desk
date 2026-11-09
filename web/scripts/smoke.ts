@@ -66,6 +66,7 @@ import {
   statedDigest
 } from '../src/mcp/graphDocument.ts'
 import { listAllTools, readCapabilities } from '../src/mcp/capabilities.ts'
+import { parseSmokeArgs } from './smokeArgs.ts'
 import type {
   Evaluation,
   GraphDocumentMeta,
@@ -78,23 +79,6 @@ import type {
   PackInventory,
   PackTest
 } from '../src/mcp/types.ts'
-
-interface Options {
-  target: string
-  facts?: string
-  evidence?: string
-  packId?: string
-  traceHead: number
-  expectKind?: string
-  expectHandoff?: string
-  matrix: boolean
-  graphs: boolean
-  secret?: string
-  expectMatrixStatus?: string
-  expectGraphStatus?: string
-  graphDocument?: string
-  graphFile?: string
-}
 
 function usage(message: string): never {
   console.error(message)
@@ -109,67 +93,12 @@ function usage(message: string): never {
   process.exit(2)
 }
 
-/** Flags that stand alone; every other flag takes the argument after it. */
-const FLAGS = new Set(['--matrix', '--graphs'])
-
-function parseArgs(argv: string[]): Options {
-  const [target, ...rest] = argv
-  if (!target) usage('the desk URL is required')
-  const options: Options = { target, traceHead: 5, matrix: false, graphs: false }
-  for (let i = 0; i < rest.length; i += 1) {
-    const flag = rest[i]!
-    if (FLAGS.has(flag)) {
-      if (flag === '--matrix') options.matrix = true
-      if (flag === '--graphs') options.graphs = true
-      continue
-    }
-    const value = rest[i + 1]
-    if (value === undefined) usage(`${flag} needs a value`)
-    i += 1
-    switch (flag) {
-      case '--secret':
-        options.secret = value
-        break
-      case '--facts':
-        options.facts = value
-        break
-      case '--evidence':
-        options.evidence = value
-        break
-      case '--pack':
-        options.packId = value
-        break
-      case '--trace':
-        options.traceHead = Number(value)
-        break
-      case '--expect-kind':
-        options.expectKind = value
-        break
-      case '--expect-handoff':
-        options.expectHandoff = value
-        break
-      case '--expect-matrix-status':
-        options.expectMatrixStatus = value
-        options.matrix = true
-        break
-      case '--expect-graph-status':
-        options.expectGraphStatus = value
-        options.graphs = true
-        break
-      case '--graph-document':
-        options.graphDocument = value
-        break
-      case '--graph-file':
-        options.graphFile = value
-        break
-      default:
-        usage(`unknown flag ${flag}`)
-    }
-  }
-  return options
+let options: ReturnType<typeof parseSmokeArgs>
+try {
+  options = parseSmokeArgs(process.argv.slice(2))
+} catch (error) {
+  usage((error as Error).message)
 }
-
-const options = parseArgs(process.argv.slice(2))
 
 const url = new URL(options.target)
 // **Only the origin is taken from the target.** Whatever else was on it — the

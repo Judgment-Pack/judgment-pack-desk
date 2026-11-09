@@ -484,7 +484,7 @@ func (s *Server) openStamping(create bool) (*os.Root, error) {
 	if s.home != nil {
 		base, parts = s.root, []string{".desk-private", stampingDirName}
 	}
-	root, _, err := openOwnFolder(base, parts, create, stampingKept)
+	root, _, err := openOwnFolderBy(base, parts, create, stampingKept, s.creation(nil))
 	return root, err
 }
 

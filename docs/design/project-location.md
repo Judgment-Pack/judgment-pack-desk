@@ -72,10 +72,20 @@ and [Desk's design system](../design-system.md).
 
 ## What follows a move
 
-A recognized same-filesystem manual move links retained history before updating
-`.desk-private/project.json`. An owner-confirmed unresolved **moved** identity does
-the same. **Copy** keeps separate history. Device/inode evidence, the former
-folder checks, and the existing identity confirmation tokens retain their roles.
+A project folder moved or renamed outside Desk is not followed in Desk v0.14.0.
+Storage registers a project at its folder (the owner record's project scope and
+the identity lineage name that path). A start that finds the same folder, by its
+persistent identity, at another path, with no move Desk made, refuses in words:
+the project was moved outside Desk, from the earlier folder to the new one; move
+the folder back and use Move…. Desk does not start there, and nothing is
+rewritten. Following such a folder by its identity, and the recognized manual
+move and owner-confirmed **moved** identity below, return with Desk #698.
+
+Before storage, a recognized same-filesystem manual move linked retained history
+before updating `.desk-private/project.json`. An owner-confirmed unresolved
+**moved** identity did the same. **Copy** keeps separate history. Device/inode
+evidence, the former folder checks, and the existing identity confirmation
+tokens retain their roles.
 
 The binding preserves chats, draft packs, briefs, test results, source reviews
 and retained attachments. Their bytes do not change. If there are sibling records
@@ -147,9 +157,10 @@ as part of automated validation.
 4. Stop Desk. Start it without a project argument using the same installation
    config. Confirm the new project opens, history is available, and the move
    action is available again. Repeat the move to a third folder and check history.
-5. Separately, stop Desk and rename an identity-bearing project manually on the
-   same filesystem. Start it at the new path. History must open without manual
-   relinking. Repeat with only a retained draft and no saved chats.
+5. Separately, stop Desk and rename a project with saved chats manually on the
+   same filesystem. Start it at the new path. Desk must not start, and must say
+   the project was moved outside Desk and name both folders. Rename it back and
+   start it: history opens.
 6. Create destination history before a move. The move/relink must refuse to combine
    it. The old identity path and all history files stay available for inspection.
 7. Check occupied destinations, cross-device destinations, changed settings after
@@ -160,7 +171,9 @@ as part of automated validation.
 9. At 1440, 390 and 320 pixels, check paths, footer actions, keyboard focus and the
    gold restart notice. No page-wide horizontal scrolling should appear.
 
-Automated coverage: `project_move_test.go`, `project_move_default_test.go`,
+Automated coverage: `project_move_test.go` (including
+`TestProjectMovedOutsideDeskIsRefusedInWords`; the manual-move tests skip until
+Desk #698), `project_move_default_test.go`,
 `project_folder_picker_test.go`, the existing identity/history suites,
 `ProjectLocation.test.tsx`, and the real browser fixture:
 

@@ -679,6 +679,25 @@ func TestWitnessOneOffCheckNeedsAWitness(t *testing.T) {
 	}
 }
 
+// **Send now on a desk with no submission loop is refused in words.** A desk
+// that returned before its loops started has a witness it can read and no
+// turn to take; Send now used to dereference the missing loop and end the
+// connection with nothing said.
+func TestWitnessSendWithNoSubmissionLoopIsRefused(t *testing.T) {
+	r := newWitnessRig(t)
+	r.chain(t, chainOf(handoverTrail, upTo(2)...))
+	r.setWitnessWith(t, "submitter.token.value")
+	r.s.witnessLoop.close()
+	r.s.witnessLoop = nil
+	status, data := witnessCall(t, r.ts, r.ts.URL, "/api/audit/witness/send", "", map[string]any{})
+	if status != http.StatusConflict || refusalOf([]byte(data)) != witnessNoLoopWords {
+		t.Fatalf("Send now with no submission loop answered %d %s", status, data)
+	}
+	if got := r.cursor(t, handoverTrail); got.Through != 0 {
+		t.Errorf("a refused Send now moved the cursor to %d", got.Through)
+	}
+}
+
 /* The archive rule ---------------------------------------------------------- */
 
 // **A file Desk cannot use is moved aside, named, and kept.** A statements

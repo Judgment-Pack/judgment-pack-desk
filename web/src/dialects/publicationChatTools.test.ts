@@ -42,3 +42,6 @@ it('a checkpoint failure never publishes or returns a successful proposal',async
  await expect(call('propose_dialect_publication',request)).rejects.toThrow('Storage unavailable')
  expect(vi.mocked(dialectAPI).mock.calls.filter(([,method])=>method==='POST').map(c=>(c[2] as any).action)).toEqual(['check'])
 })
+it('declares the owner taxonomy of each server-side publication tool',()=>{
+ expect(Object.fromEntries(tools.map(t=>[t.name,t.taxonomy]))).toEqual({read_dialect_publication:{operation:'read',effect:'read'},propose_dialect_publication:{operation:'propose',effect:'propose'}})
+})

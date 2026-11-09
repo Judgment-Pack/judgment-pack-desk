@@ -13,7 +13,7 @@ const inputPreparationLimit = 8 << 20
 // Private file encoding and custody belong to the file adapter. Feature code
 // must use the collection repository, including reads used for admission.
 func (s *Server) openInputPreparations(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(inputPreparationDir, "/"), create, "input preparations")
+	root, made, err := openOwnFolderBy(s.root, strings.Split(inputPreparationDir, "/"), create, "input preparations", s.creation(nil))
 	if err == nil && made {
 		err = writePrivateData(root, ".gitignore", []byte("*\n"))
 		if err != nil {
@@ -48,4 +48,24 @@ func writeInputPreparation(root *os.Root, doc inputPreparation) (inputPreparatio
 		return inputPreparationReply{}, err
 	}
 	return readInputPreparation(root, doc.ID)
+}
+
+// Raw export stays inside the original collection owner. The caller borrows
+// the original project; every opened ancestor is checked, with no creation.
+func (s *Server) openInputPreparationRaw() (*os.Root, bool, error) {
+	var owner *storageBudgetOwner
+	if s.storageConstruction != nil {
+		owner = s.storageConstruction.owner
+	}
+	return storageRetentionOwnFolder(s.root, strings.Split(inputPreparationDir, "/"), "input preparations", owner, "preparation-ancestor-close")
+}
+func readInputPreparationRawFile(root *os.Root, id string) (inputPreparationRawSnapshot, error) {
+	if !inputPreparationID.MatchString(id) {
+		return inputPreparationRawSnapshot{}, errors.New("invalid dialect collection identity")
+	}
+	raw, _, err := storageRetentionRead(root, id+".json", inputPreparationLimit)
+	if err != nil {
+		return inputPreparationRawSnapshot{}, err
+	}
+	return validateInputPreparationRaw(id, "", inputPreparationRawSnapshot{ID: id, Revision: digestOf(raw), Bytes: raw})
 }

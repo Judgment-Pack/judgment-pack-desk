@@ -208,11 +208,9 @@ func TestDialectDraftMigratesExistingConversationOnRead(t *testing.T) {
 	}
 }
 func testDialectDraftMigratesExistingConversationOnRead(t *testing.T, s *Server) {
-	// Seed an old checkpoint without using the new conversation writer.
-	store, err := s.openChatData()
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Seed an old checkpoint without using the new conversation writer, in
+	// the history storage has enrolled.
+	store := enrolledChatData(t, s)
 	name, err := resolveConversationName(store.root, s.conversationIdentity())
 	if err != nil {
 		t.Fatal(err)
