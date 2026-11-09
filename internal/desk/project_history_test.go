@@ -3,11 +3,14 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,80 +33,34 @@ func historyRequest(t *testing.T, ts *httptest.Server, action string, request pr
 	}
 	return response.StatusCode, preview, string(data)
 }
-func TestProjectHistoryRelocationSurvivesMoveAndBackup(t *testing.T) {
+
+// **Another startup project's history is not linked in: the installation is
+// sealed to its first project** (v0.14.0). Relinking history recorded under
+// another project folder of the same installation, without a Desk home, needs
+// a Desk started on that second folder, and the first-project seal refuses
+// it at startup, in words, before any history is read, previewed or linked.
+// The first project's history is untouched. These were the relink and stale
+// preview tests, which started both projects' Desks on one installation.
+func TestProjectHistoryOfAnotherStartupProjectIsRefusedBySeal(t *testing.T) {
+	requireStorageLine(t)
 	config := t.TempDir()
 	old, ots, _ := assistantServerIn(t, config)
-	moved, mts, _ := assistantServerIn(t, config)
 	if code, _ := chatRequest(t, ots, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
-	request := projectHistoryRequest{PreviousProject: old.projectDir}
-	code, preview, body := historyRequest(t, mts, "preview", request)
-	if code != 200 || preview.ChatCount != 1 {
-		t.Fatal(code, body)
+	saved := savedConversationBytes(t, old, ots)
+	location := storageGet(t, ots)
+	ots.Close()
+	assistantRunMust(t, old.Close())
+	moved, err := New(Config{ProjectDir: t.TempDir(), DeskConfigDir: config, JpackBin: standInRuntime(t), Token: testToken, Port: 8791, Logger: log.New(io.Discard, "", 0)})
+	if err == nil {
+		_ = moved.Close()
+		t.Fatalf("another startup project started (read-only=%v, problem=%v)", moved.storageReadOnly, moved.storageProblem)
 	}
-	if code, reply := chatRequest(t, mts, "GET", "", "", true, ""); code != 200 || reply.SHA256 != "absent" {
-		t.Fatal("preview modified project association", code)
+	if !errors.Is(err, errDeskAnotherStartupProject) || !strings.Contains(err.Error(), "first started on") {
+		t.Fatalf("another startup project was refused without saying why: %v", err)
 	}
-	request.SourceRevision = preview.SourceRevision
-	request.BindingsRevision = preview.BindingsRevision
-	if code, _, body = historyRequest(t, mts, "relink", request); code != 200 {
-		t.Fatal(code, body)
-	}
-	if code, reply := chatRequest(t, mts, "GET", "", "", true, ""); code != 200 || string(reply.Content) != storageChat || reply.Project != moved.projectDir {
-		t.Fatal("linked history did not open", code)
-	}
-	next := `{"version":1,"chats":[{"id":"newer"}]}`
-	if code, _ := chatRequest(t, mts, "PUT", preview.SourceRevision, next, true, ""); code != 200 {
-		t.Fatal(code)
-	}
-	if code, reply := chatRequest(t, ots, "GET", "", "", true, ""); code != 200 || string(reply.Content) != next {
-		t.Fatal("old and new locations did not share linked history", code)
-	}
-	before := storageGet(t, mts)
-	target := filepath.Join(t.TempDir(), "moved-data")
-	if code, _, body := storageRequest(t, mts, "/api/storage/move", moveChatData{Path: target, Revision: before.Revision}); code != 200 {
-		t.Fatal(code, body)
-	}
-	if code, reply := chatRequest(t, mts, "GET", "", "", true, ""); code != 200 || string(reply.Content) != next {
-		t.Fatal("data move lost binding", code)
-	}
-	backup := backupBytes(t, mts)
-	cfg := moved.cfg
-	cfg.DeskConfigDir = t.TempDir()
-	clean, cts := startDesk(t, cfg)
-	defer clean.Close()
-	defer cts.Close()
-	empty := storageGet(t, cts)
-	if code, body := restoreBackup(t, cts, moveChatData{Path: filepath.Join(t.TempDir(), "restored"), Revision: empty.Revision}, backup); code != 200 {
-		t.Fatal(code, body)
-	}
-	if code, reply := chatRequest(t, cts, "GET", "", "", true, ""); code != 200 || string(reply.Content) != next {
-		t.Fatal("backup restore lost binding", code)
-	}
-}
-func TestProjectHistoryNeverMergesOrUsesStalePreview(t *testing.T) {
-	config := t.TempDir()
-	old, ots, _ := assistantServerIn(t, config)
-	current, cts, _ := assistantServerIn(t, config)
-	chatRequest(t, ots, "PUT", "absent", storageChat, true, "")
-	request := projectHistoryRequest{PreviousProject: old.projectDir}
-	code, preview, body := historyRequest(t, cts, "preview", request)
-	if code != 200 {
-		t.Fatal(code, body)
-	}
-	request.SourceRevision = preview.SourceRevision
-	request.BindingsRevision = preview.BindingsRevision
-	chatRequest(t, ots, "PUT", preview.SourceRevision, `{"version":1,"chats":[]}`, true, "")
-	if code, _, _ := historyRequest(t, cts, "relink", request); code != 409 {
-		t.Fatal("stale preview accepted", code)
-	}
-	chatRequest(t, cts, "PUT", "absent", storageChat, true, "")
-	if code, _, _ := historyRequest(t, cts, "preview", projectHistoryRequest{PreviousProject: old.projectDir}); code != 409 {
-		t.Fatal("existing history allowed a merge", code)
-	}
-	location := storageGet(t, cts)
-	mustBytes(t, filepath.Join(location.Path, current.conversationName()), storageChat)
+	mustBytes(t, filepath.Join(location.Path, old.conversationName()), saved)
 }
 func TestMissingLinkedHistoryCannotBecomeEmpty(t *testing.T) {
 	s, ts, _ := assistantServer(t)
@@ -122,8 +79,9 @@ func TestMissingLinkedHistoryCannotBecomeEmpty(t *testing.T) {
 }
 
 func TestBrokenProjectBindingStillAllowsRestore(t *testing.T) {
-	_, ts, _ := assistantServer(t)
+	s, ts, _ := assistantServer(t)
 	chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
+	storageChat := savedConversationBytes(t, s, ts)
 	backup := backupBytes(t, ts)
 	before := storageGet(t, ts)
 	privateFixture(t, filepath.Join(before.Path, projectBindingsName), `{"version":9,"projects":{}}`)

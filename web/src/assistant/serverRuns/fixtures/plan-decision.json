@@ -1,0 +1,164 @@
+{
+  "admissionId": "admission-one",
+  "id": "arun_11111111111111111111111111111111",
+  "revision": 1,
+  "owner": {
+    "kind": "chat",
+    "id": "chat-one",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "requestId": "message-one",
+  "state": "awaiting-input",
+  "operations": null,
+  "events": null,
+  "cursor": "1:0",
+  "checkpoint": {
+    "version": 2,
+    "id": "execution-one",
+    "requestKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "phase": "work",
+    "unit": "model-requests",
+    "used": 1,
+    "limit": 20,
+    "grants": [],
+    "status": "paused",
+    "plan": [
+      {
+        "id": "step-1",
+        "step": "Inspect source",
+        "status": "pending",
+        "origin": {
+          "plan": "plan-one",
+          "revision": "sha256:eb8920d6419b959a251f36271ff45094b9a984cb83e7e6b943613cec8b846a4b",
+          "index": 0
+        }
+      },
+      {
+        "id": "step-2",
+        "step": "Validate result",
+        "status": "pending",
+        "origin": {
+          "plan": "plan-one",
+          "revision": "sha256:eb8920d6419b959a251f36271ff45094b9a984cb83e7e6b943613cec8b846a4b",
+          "index": 1
+        }
+      }
+    ],
+    "explanation": "",
+    "operations": [],
+    "context": {
+      "scope": "fixture",
+      "entries": []
+    },
+    "planState": {
+      "revision": "sha256:7c63596c884bf0c73ace53e629ffe1529e7d5baeb3539d22b18afa479f5b7797",
+      "sequence": 0,
+      "nextId": 3,
+      "discarded": 0,
+      "history": [],
+      "accepted": {
+        "id": "plan-one",
+        "revision": "sha256:eb8920d6419b959a251f36271ff45094b9a984cb83e7e6b943613cec8b846a4b",
+        "sourceRevision": 1,
+        "objective": "Review exact scope",
+        "steps": [
+          "Inspect source",
+          "Validate result"
+        ],
+        "references": [],
+        "validatedReferences": [],
+        "acceptedAt": "2026-10-28T00:00:00Z"
+      },
+      "pending": {
+        "purpose": "plan-drift",
+        "callId": "exact-plan-decision",
+        "revision": "sha256:7c63596c884bf0c73ace53e629ffe1529e7d5baeb3539d22b18afa479f5b7797",
+        "candidate": {
+          "plan": [
+            {
+              "id": "step-1",
+              "step": "Inspect source",
+              "status": "pending",
+              "origin": {
+                "plan": "plan-one",
+                "revision": "sha256:eb8920d6419b959a251f36271ff45094b9a984cb83e7e6b943613cec8b846a4b",
+                "index": 0
+              }
+            }
+          ],
+          "planState": {
+            "revision": "sha256:688266b164e354492f447e720c99751ccb1eccbc6a1424b61c28ef6e1be3ce53",
+            "sequence": 1,
+            "nextId": 3,
+            "discarded": 0,
+            "history": [
+              {
+                "sequence": 1,
+                "previous": "sha256:7c63596c884bf0c73ace53e629ffe1529e7d5baeb3539d22b18afa479f5b7797",
+                "revision": "sha256:688266b164e354492f447e720c99751ccb1eccbc6a1424b61c28ef6e1be3ce53",
+                "explanation": "Remove reviewed second step",
+                "diff": [
+                  {
+                    "id": "step-2",
+                    "kind": "removed",
+                    "before": {
+                      "id": "step-2",
+                      "step": "Validate result",
+                      "status": "pending",
+                      "origin": {
+                        "plan": "plan-one",
+                        "revision": "sha256:eb8920d6419b959a251f36271ff45094b9a984cb83e7e6b943613cec8b846a4b",
+                        "index": 1
+                      }
+                    },
+                    "from": 1
+                  }
+                ]
+              }
+            ],
+            "accepted": {
+              "id": "plan-one",
+              "revision": "sha256:eb8920d6419b959a251f36271ff45094b9a984cb83e7e6b943613cec8b846a4b",
+              "sourceRevision": 1,
+              "objective": "Review exact scope",
+              "steps": [
+                "Inspect source",
+                "Validate result"
+              ],
+              "references": [],
+              "validatedReferences": [],
+              "acceptedAt": "2026-10-28T00:00:00Z"
+            },
+            "departures": [
+              {
+                "revision": "sha256:688266b164e354492f447e720c99751ccb1eccbc6a1424b61c28ef6e1be3ce53",
+                "explanation": "Remove reviewed second step",
+                "changes": [
+                  {
+                    "kind": "removed",
+                    "step": "step-2",
+                    "index": 1
+                  }
+                ]
+              }
+            ],
+            "departuresDiscarded": 0
+          }
+        },
+        "explanation": "Remove reviewed second step",
+        "departures": [
+          {
+            "kind": "removed",
+            "step": "step-2",
+            "index": 1
+          }
+        ]
+      }
+    }
+  },
+  "planDecisionReference": {
+    "callId": "exact-plan-decision",
+    "planRevision": "sha256:7c63596c884bf0c73ace53e629ffe1529e7d5baeb3539d22b18afa479f5b7797",
+    "candidateRevision": "sha256:688266b164e354492f447e720c99751ccb1eccbc6a1424b61c28ef6e1be3ce53"
+  }
+}

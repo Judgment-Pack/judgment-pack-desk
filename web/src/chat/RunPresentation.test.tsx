@@ -173,3 +173,46 @@ it('leaves a reply that did no work and delegated nothing without a report',()=>
  expect(work.report).toMatchObject({requests:1,tokens:{inputTokens:10,outputTokens:3}})
  expect(render(<WorkSummary work={work}/>).container.textContent).toBe('')
 })
+
+
+it('shows exact approval result text outside collapsed Work and retains earlier calls after reload',async()=>{
+ const {default:results}=await import('../../../internal/desk/testdata/assistant-approval-result-display.json')
+ const {default:pending}=await import('../assistant/serverRuns/fixtures/pending.json')
+ const {decodeSnapshot}=await import('../assistant/serverRuns/decode')
+ const {presentRun}=await import('../assistant/serverRuns/presentation')
+ const binding={owner:{...pending.owner,kind:'chat' as const},requestId:pending.requestId}
+ const vector={...pending,state:'stopped',approvalResults:results}
+ const snapshot=decodeSnapshot(vector,binding)
+ const state=presentRun(INITIAL_STATE,snapshot)
+ const saved=readResponseHistory(JSON.parse(JSON.stringify(state.responses)))
+ const view=render(<WorkSummary work={saved[0]!.work}/>)
+ expect(view.container.querySelector('details')?.open).toBe(false)
+ const regions=screen.getAllByRole('region',{name:'Result'})
+ expect(regions.map(node=>node.textContent)).toEqual(results.flatMap(row=>row.result.text))
+ expect(regions[0]?.textContent).toContain('1.20')
+ expect(view.container.querySelector('script')).toBeNull()
+ expect(view.container.textContent).toContain('image, structuredContent')
+ expect(view.container.textContent).toContain('Not available')
+ expect(presentRun(INITIAL_STATE,decodeSnapshot(JSON.parse(JSON.stringify(vector)),binding)).responses![0].work).toEqual(saved[0]!.work)
+ for(const approvalResults of [[...results,results[0]], [{...results[0],result:{...results[0]!.result,text:[7]}}], [{...results[0],result:{available:false,text:['invented'],otherContent:[]}}], [{...results[0],approved:true}]])expect(()=>decodeSnapshot({...vector,approvalResults},binding)).toThrow()
+ for(const approvalResult of [{available:'yes',text:[],otherContent:[]},{available:false,text:['invented'],otherContent:[]},{available:true,text:[],otherContent:[false]}])expect(()=>readResponseHistory([{...saved[0],work:{...saved[0]!.work,items:[{id:'call',name:'tool',status:'complete',approvalResult}]}}])).toThrow()
+})
+
+it('warns about an unkept approved result outside collapsed Work and preserves uncertainty after reload',async()=>{
+ const {default:pending}=await import('../assistant/serverRuns/fixtures/pending.json')
+ const {decodeSnapshot}=await import('../assistant/serverRuns/decode')
+ const {presentRun}=await import('../assistant/serverRuns/presentation')
+ const binding={owner:{...pending.owner,kind:'chat' as const},requestId:pending.requestId}
+ const vector={...pending,state:'interrupted',approvalResults:[{callId:'approved-call',name:'experimental_evaluate',isError:true,result:{available:false,text:[],otherContent:[]}}]}
+ const state=presentRun(INITIAL_STATE,decodeSnapshot(vector,binding))
+ expect(state.status).toBe('stopped')
+ const saved=readResponseHistory(JSON.parse(JSON.stringify(state.responses)))
+ const view=render(<WorkSummary work={saved[0]!.work}/>)
+ const warning=screen.getByText('The approved action may have run, but its result was not kept. Its outcome is unknown. Do not run the action again.')
+ expect(warning.closest('details')).toBeNull()
+ expect(view.container.querySelector('details')?.open).toBe(false)
+ expect(view.container.textContent).toContain('Not available')
+ expect(view.container.querySelector('pre')).toBeNull()
+ expect(view.container.querySelector('[data-status="complete"]')).toBeNull()
+ expect(presentRun(INITIAL_STATE,decodeSnapshot(JSON.parse(JSON.stringify(vector)),binding)).responses![0]!.work).toEqual(saved[0]!.work)
+})

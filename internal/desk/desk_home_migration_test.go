@@ -6,22 +6,59 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
+// withoutStorage leaves the settings folder config as an installation whose
+// storage was never set up, as before this version: its storage files and
+// folder (storageInstallationNames) are removed. A home move journalled then is still finished by
+// recovery, and the moved installation sets storage up at its first start.
+func withoutStorage(t *testing.T, config string) {
+	t.Helper()
+	entries, err := os.ReadDir(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if name := entry.Name(); slices.Contains(storageInstallationNames, name) {
+			if err = os.RemoveAll(filepath.Join(config, name)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// **Moving an installation into a Desk home is refused once storage is set
+// up, and a move journalled before storage is still finished** (v0.14.0).
+// A start of this version sets storage up, so the confirmation refuses in
+// words (errDeskHomeMoveAfterStorage). Below it, the planner and the queue
+// keep their own coverage for a move asked for without storage. The journal and its recovery are
+// unchanged: a move journalled by an installation without storage, stopped
+// after a parent rename, is finished at the next attempt; the moved
+// installation keeps its history, credentials, named desk and retained
+// evidence byte for byte, and its locator opens the moved startup project.
+// Starting it is not checked: history written by this version carries
+// storage state that only a storage-aware home move carries (Desk #698).
 func TestDeskHomeMigrationPreservesHistoryCredentialsAndNamedDesk(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	s, ts, _ := assistantServer(t)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	storageChat := savedConversationBytes(t, s, ts)
+	history := s.conversationName()
 	named := createTestDesk(t, ts, "Research · Demo")
 	privateFixture(t, filepath.Join(s.configDir, "secrets", "migration-fixture"), "opaque credential bytes\n")
 	privateFixture(t, filepath.Join(named.Folder, ".desk-private", "retained-proof.json"), "{\"signed\":\"opaque exact bytes\"}\n")
 	destination := filepath.Join(t.TempDir(), "jpack-desk")
+	if code, raw := deskCall(t, ts, "POST", "/api/desk-home/move", "", `{"destination":`+jsonString(destination)+`}`, true); code != 409 || refusalOf(raw) != errDeskHomeMoveAfterStorage.Error() {
+		t.Fatalf("a move into a Desk home after storage was set up was not refused in words: %d %s", code, raw)
+	}
 	plan, err := s.planDeskHome(destination)
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +76,7 @@ func TestDeskHomeMigrationPreservesHistoryCredentialsAndNamedDesk(t *testing.T) 
 	cfg := s.cfg
 	ts.Close()
 	s.Close()
+	withoutStorage(t, tx.Config)
 	journal := homeJournalPath(tx.Config)
 	if err = saveHomeTransaction(journal, tx, true); err != nil {
 		t.Fatal(err)
@@ -77,22 +115,18 @@ func TestDeskHomeMigrationPreservesHistoryCredentialsAndNamedDesk(t *testing.T) 
 	if chosen, err := ResolveProjectDir("", cfg.DeskConfigDir); err != nil || chosen != cfg.ProjectDir {
 		t.Fatal("saved startup cannot open", chosen, err)
 	}
-	again, ats := startDesk(t, cfg)
-	t.Cleanup(func() { ats.Close(); again.Close() })
-	if code, reply := chatRequest(t, ats, "GET", "", "", true, ""); code != 200 || string(reply.Content) != storageChat {
-		t.Fatal("history lost", code, reply)
+	// The startup chat namespace moves into the startup Desk's own folder.
+	if raw, err := os.ReadFile(filepath.Join(cfg.ProjectDir, ".desk-private", "data", history)); err != nil || string(raw) != storageChat {
+		t.Fatal("history lost", err)
 	}
-	if _, ok := again.desks[named.ID]; !ok {
-		t.Fatal("named Desk was not resumed")
+	if movedNamed.ID != named.ID || movedNamed.HistoryIdentity == "" {
+		t.Fatal("named Desk was not moved", movedNamed)
 	}
 	if raw, err := os.ReadFile(filepath.Join(cfg.DeskConfigDir, "secrets", "migration-fixture")); err != nil || string(raw) != "opaque credential bytes\n" {
 		t.Fatal("credential changed", err)
 	}
 	if raw, err := os.ReadFile(filepath.Join(destination, movedNamed.Folder, ".desk-private", "retained-proof.json")); err != nil || string(raw) != "{\"signed\":\"opaque exact bytes\"}\n" {
 		t.Fatal("retained evidence changed", err)
-	}
-	if shared, reason := again.identityShared(); shared {
-		t.Fatal("move became an identity conflict", reason)
 	}
 }
 func TestDeskHomePlanRefusesConflictsAndChangesToken(t *testing.T) {
@@ -158,7 +192,18 @@ func TestDeskHomeTransactionNeverOverwritesChangedFiles(t *testing.T) {
 	}
 }
 
+// **A Desk home move is refused in words once storage is set up** (v0.14.0).
+// Storage registers its folders where they are, and no transition carries
+// its owner record to another folder yet (Desk #698), so moving a whole
+// installation into a Desk home, as here, stopped with "storage coordinator
+// busy" or left a moved installation whose storage start was refused. Every
+// start of this version sets storage up, so the API still requires
+// authentication first, then says why in words: Desk home status before a
+// move is offered, and preview and move with or without a reviewed token.
+// Nothing is scheduled or moved, no shutdown is requested and ordinary writes
+// continue.
 func TestDeskHomeAPIRequiresReviewAndStopsBeforeMove(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	shutdown := make(chan struct{}, 1)
 	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: os.Getenv("JPACK_BIN"), HomeMoveShutdown: func() { shutdown <- struct{}{} }}
@@ -169,44 +214,41 @@ func TestDeskHomeAPIRequiresReviewAndStopsBeforeMove(t *testing.T) {
 	if code, _ := deskCall(t, ts, "POST", "/api/desk-home/preview", "", string(request), false); code != 401 {
 		t.Fatal("unauthenticated preview", code)
 	}
-	code, raw := deskCall(t, ts, "POST", "/api/desk-home/preview", "", string(request), true)
-	var plan deskHomePlan
-	if code != 200 || json.Unmarshal(raw, &plan) != nil || len(plan.Blockers) > 0 {
-		t.Fatal(code, string(raw))
+	code, raw := deskCall(t, ts, "GET", "/api/desk-home", "", "", true)
+	var status struct {
+		CanMove     bool   `json:"canMove"`
+		MoveRefusal string `json:"moveRefusal"`
 	}
-	if code, _ = deskCall(t, ts, "POST", "/api/desk-home/move", "", string(request), true); code != 409 {
-		t.Fatal("accepted without review", code)
+	if code != 200 || json.Unmarshal(raw, &status) != nil || status.CanMove || status.MoveRefusal != errDeskHomeMoveAfterStorage.Error() {
+		t.Fatalf("Desk home status did not say why no move is offered: %d %s", code, raw)
+	}
+	for _, path := range []string{"/api/desk-home/preview", "/api/desk-home/move"} {
+		for _, token := range []string{"", "a-reviewed-token"} {
+			request, _ = json.Marshal(projectMoveRequest{Destination: destination, Token: token})
+			if code, raw := deskCall(t, ts, "POST", path, "", string(request), true); code != 409 || refusalOf(raw) != errDeskHomeMoveAfterStorage.Error() {
+				t.Fatalf("%s with token %q answered %d %s", path, token, code, raw)
+			}
+		}
 	}
 	if s.homeMove.queued.Load() {
-		t.Fatal("refusal scheduled a move")
-	}
-	request, _ = json.Marshal(projectMoveRequest{Destination: destination, Token: plan.Token})
-	code, raw = deskCall(t, ts, "POST", "/api/desk-home/move", "", string(request), true)
-	if code != 200 {
-		t.Fatal(code, string(raw))
-	}
-	if _, err := os.Stat(cfg.ProjectDir); err != nil {
-		t.Fatal("moved before shutdown", err)
-	}
-	if code, _ := deskCall(t, ts, "PUT", "/api/conversations", "", storageChat, true); code != 409 {
-		t.Fatal("queued move allowed new writes", code)
-	}
-	if err := s.FinishDeskHomeMove(); err == nil {
-		t.Fatal("moved while live process lease was held")
+		t.Fatal("a refusal scheduled a move")
 	}
 	select {
 	case <-shutdown:
-	case <-time.After(3 * time.Second):
-		t.Fatal("no shutdown request")
+		t.Fatal("a refusal requested a shutdown")
+	case <-time.After(300 * time.Millisecond):
 	}
-	ts.Close()
-	s.Close()
-	if err := s.FinishDeskHomeMove(); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(cfg.ProjectDir); err != nil {
+		t.Fatal("the project moved", err)
 	}
-	tx, err := readHomeTransaction(homeJournalPath(cfg.DeskConfigDir))
-	if err != nil || tx == nil || !tx.Complete {
-		t.Fatal("migration not complete", err)
+	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+		t.Fatal("the refusal made the destination", err)
+	}
+	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
+		t.Fatalf("a refused move stopped ordinary writes: %d", code)
+	}
+	if tx, err := readHomeTransaction(homeJournalPath(cfg.DeskConfigDir)); err != nil || tx != nil {
+		t.Fatalf("a refused move left a journal: %+v %v", tx, err)
 	}
 }
 func TestDeskHomeOtherProcessBlocksMigrationLease(t *testing.T) {
@@ -233,12 +275,21 @@ func TestDeskHomeOtherProcessBlocksMigrationLease(t *testing.T) {
 	}
 }
 
+// **Moving a Desk home is refused once storage is set up, and a whole move
+// journalled before storage is still finished** (v0.14.0). The confirmation
+// refuses in words (errDeskHomeMoveAfterStorage). A whole-home move journalled
+// by a home without storage, stopped after its pointer write, is finished at
+// the next attempt and keeps a desk created after the registry was cached.
 func TestDeskHomeWholeMoveKeepsNewDesksAndRecoversAfterPointer(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	cfg, _ := homeFixture(t)
 	s, ts := startDesk(t, cfg)
 	named := createTestDesk(t, ts, "New research")
 	destination := filepath.Join(t.TempDir(), "jpack-desk")
+	if code, raw := deskCall(t, ts, "POST", "/api/desk-home/move", "", `{"destination":`+jsonString(destination)+`}`, true); code != 409 || refusalOf(raw) != errDeskHomeMoveAfterStorage.Error() {
+		t.Fatalf("a Desk home move after storage was set up was not refused in words: %d %s", code, raw)
+	}
 	plan, err := s.planDeskHome(destination)
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +303,7 @@ func TestDeskHomeWholeMoveKeepsNewDesksAndRecoversAfterPointer(t *testing.T) {
 	}
 	ts.Close()
 	s.Close()
+	withoutStorage(t, tx.Config)
 	journal := homeJournalPath(tx.Config)
 	if err = saveHomeTransaction(journal, tx, true); err != nil {
 		t.Fatal(err)

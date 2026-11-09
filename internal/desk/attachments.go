@@ -94,6 +94,9 @@ func validateAttachmentObject(data []byte) error {
 }
 
 func storageFileLimit(name string) int {
+	if assistantDialectReadRecoveryFileName.MatchString(name) {
+		return assistantDialectReadRecoveryFileLimit
+	}
 	if memoryFileName.MatchString(name) {
 		return memoryLimit
 	}
@@ -141,33 +144,22 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 			writeJSONCoded(w, 413, CodeTooLarge, "attachment object exceeds its storage limit")
 			return
 		}
-		if err = validateAttachmentObject(body); err != nil {
-			writeJSONCoded(w, 400, CodeBadRequest, err.Error())
+		receipt, err := s.attachmentStorage().write(r.Context(), attachmentWriteRequest{
+			id: id, ifMatch: r.Header.Get("If-Match"), data: body,
+		})
+		if err != nil {
+			var storage *attachmentStorageError
+			if errors.As(err, &storage) {
+				storageFailure(w, storage.err)
+			} else {
+				writeJSONError(w, statusForRefusal(err), err)
+			}
 			return
 		}
-		if r.Header.Get("If-Match") == "absent" {
-			gateway, err := s.configuredResearch()
-			if err != nil {
-				writeJSONError(w, statusForRefusal(err), err)
-				return
-			}
-			var object attachmentObject
-			_ = json.Unmarshal(body, &object)
-			n := len(object.Original.Bytes)/4*3 - (len(object.Original.Bytes) - len(strings.TrimRight(object.Original.Bytes, "=")))
-			if gateway.maxFileBytes == 0 {
-				writeJSONCoded(w, 409, CodeResearchUnconfigured, "document uploads are not enabled")
-				return
-			}
-			if int64(n) > gateway.maxFileBytes {
-				writeJSONCoded(w, 413, CodeTooLarge, "original exceeds the configured document upload limit")
-				return
-			}
-			if object.Proof != nil {
-				writeJSONCoded(w, 400, CodeBadRequest, "retain the original before adding an acquisition packet")
-				return
-			}
-		}
+		writeJSON(w, http.StatusOK, receipt)
+		return
 	}
+
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	lock, err := s.privateDataLockContext(r.Context(), true)
@@ -194,69 +186,39 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 		storageFailure(w, err)
 		return
 	}
-	if r.Method == http.MethodGet {
-		if !exists {
-			writeJSONCoded(w, 404, CodeNotFound, "attachment is unavailable in this project's chat storage")
-			return
-		}
-		w.Header().Set("ETag", digestOf(current))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(current)
+	if !exists {
+		writeJSONCoded(w, 404, CodeNotFound, "attachment is unavailable in this project's chat storage")
 		return
 	}
-	expected := "absent"
-	if exists {
-		expected = digestOf(current)
-	}
-	if r.Header.Get("If-Match") != expected {
-		writeJSONCoded(w, 409, CodeStale, "attachment changed; reload before saving")
-		return
-	}
-	if exists {
-		var before, after attachmentObject
-		if err := validateAttachmentObject(current); err != nil {
-			storageFailure(w, err)
-			return
-		}
-		_ = json.Unmarshal(current, &before)
-		_ = json.Unmarshal(body, &after)
-		if before.Original != after.Original || before.Proof != nil {
-			writeJSONCoded(w, 409, CodeStale, "an original or completed acquisition cannot be replaced")
-			return
-		}
-	}
-	// A hard store-wide quota also bounds abandoned/unsent uploads. They are
-	// retained intentionally, and included in backups, rather than silently erased.
-	entries, err := storageEntries(store.root)
-	if err != nil {
-		storageFailure(w, err)
-		return
-	}
-	// Leave room for the conversation created by the first send and storage
-	// bookkeeping. Filling the directory would otherwise prevent even backup.
-	if !exists && len(entries) >= maxStorageFiles-4 {
-		writeJSONCoded(w, 413, CodeTooLarge, "private chat storage has reached its upload file limit")
-		return
-	}
-	total := int64(len(body) - len(current))
-	for _, entry := range entries {
-		if chatStorageFile(entry.Name()) {
-			info, e := store.root.Lstat(entry.Name())
-			if e != nil {
-				storageFailure(w, e)
-				return
-			}
-			total += info.Size()
-		}
-	}
-	if total > maxMoveBytes {
-		writeJSONCoded(w, 413, CodeTooLarge, "private chat storage has reached its 1 GiB upload limit")
-		return
-	}
-	if err = writePrivateData(store.root, name, body); err != nil {
-		storageFailure(w, err)
-		return
-	}
+	w.Header().Set("ETag", digestOf(current))
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "sha256": digestOf(body)})
+	_, _ = w.Write(current)
+}
+
+// Chat document.Digest names the acquisition result, NOT the raw attachment
+// file digest (assistant_documents.go verifies both separately). Export retains
+// the original packet bytes; this join is not cryptographic re-verification.
+func retentionAttachmentResultDigest(raw []byte) string {
+	var object attachmentObject
+	if validateAttachmentObject(raw) != nil || json.Unmarshal(raw, &object) != nil || object.Proof == nil {
+		return ""
+	}
+	var envelope struct {
+		Receipt json.RawMessage `json:"receipt"`
+	}
+	if !uniqueJSON([]byte(object.Proof.Response)) || json.Unmarshal([]byte(object.Proof.Response), &envelope) != nil {
+		return ""
+	}
+	var receipt struct {
+		Version string `json:"receiptVersion"`
+		Kind    string `json:"kind"`
+		Source  string `json:"source"`
+		Session string `json:"sessionId"`
+		Index   int    `json:"callIndex"`
+		Digest  string `json:"resultDigest"`
+	}
+	if json.Unmarshal(envelope.Receipt, &receipt) != nil || receipt.Version != "3" || receipt.Kind != "acquisition" || receipt.Source != object.Proof.Source || receipt.Session != object.Proof.Session || receipt.Index != 0 || !strings.HasPrefix(receipt.Digest, "sha256:") || !assistantRunDigest(strings.TrimPrefix(receipt.Digest, "sha256:")) {
+		return ""
+	}
+	return receipt.Digest
 }

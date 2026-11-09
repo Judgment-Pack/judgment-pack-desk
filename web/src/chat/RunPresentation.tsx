@@ -1,3 +1,4 @@
+import { CodeBlock } from '../ui/CodeBlock'
 import {questionFailureMessage} from '@judgment-pack/harness/questionFailure'
 import { DelegatedTaskDetails, profileLabel } from './DelegatedTaskDetails'
 import {dialectRecipeFailureMessage} from '../dialects/proposalFailure'
@@ -54,6 +55,12 @@ export function WorkSummary({ state, work, documents=[], onRead }: { state?: Run
   if (!rows.length && !notices.length && !critique && !reported) return null
   const failures = rows.filter(row => row.status === 'failed').length
   return <div className={styles.workGroup}>
+   {rows.filter(row=>row.approvalResult).map(row=><section key={`result-${row.id}`} aria-label={`${row.name} · ${msg('Result')}`}>
+    <p>{TOOL_LABELS[row.name] ?? row.name} · {msg('Result')}</p>
+    {row.approvalResult!.text.map((text,index)=><CodeBlock key={index} label={msg('Result')} text={text} verbatim/>)}
+    {!row.approvalResult!.available&&<><p>{msg('Not available')}</p><p>{msg('The approved action may have run, but its result was not kept. Its outcome is unknown. Do not run the action again.')}</p></>}
+    {row.approvalResult!.otherContent.length>0&&<p>{msg('Type')}: {row.approvalResult!.otherContent.join(', ')}</p>}
+   </section>)}
    {(rows.length>0||notices.length>0||critique||reported)&&<Disclosure className={styles.work} indicator={rows.some(row=>row.status==='working')?<Spinner/>:undefined} title={<span className={styles.workTitle}>{rows.length ? msg('Work · {{count}} steps', {count:rows.length}) : notices.length||critique ? msg('Assistant notice') : msg('Run report')}{failures>0&&<span className={styles.workWarning}>{msg(' · {{count}} failed',{count:failures})}</span>}</span>}>
     {rows.length > 0 && <ol>{rows.map(row => {
      const search=row.name==='search_sources', link=row.name==='read_link', graph=GRAPH_TOOLS.has(row.name), interactive=(search||link||graph||!!row.task)&&!!onRead

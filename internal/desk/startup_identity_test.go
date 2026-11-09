@@ -48,6 +48,45 @@ func startedAt(t *testing.T, s *Server, dir string) (*Server, *httptest.Server, 
 	return again, ts, logged
 }
 
+// refusedBySeal closes s and starts Desk on dir with s's folders and runtime.
+// An installation without a Desk home is sealed to the project Desk was first
+// started on (v0.14.0 keeps the first-project seal), so a start on another
+// project folder is refused at startup, in words, before anything is swept,
+// recovered or rotated.
+func refusedBySeal(t *testing.T, s *Server, dir string) {
+	t.Helper()
+	cfg := s.cfg
+	cfg.Root, cfg.ProjectDir, cfg.deskID, cfg.parent = nil, dir, "", nil
+	logged := &bytes.Buffer{}
+	cfg.Logger = log.New(logged, "", 0)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := New(cfg)
+	if err == nil {
+		again.Close()
+		t.Fatalf("a start on another project in an installation sealed to its first project was not refused: %s", logged)
+	}
+	if !errors.Is(err, errDeskAnotherStartupProject) || !strings.Contains(err.Error(), "first started on") {
+		t.Fatalf("a start on another project was refused without saying why: %v", err)
+	}
+}
+
+// startedApart starts Desk on dir with s's runtime in an installation of its
+// own: new settings and data folders, so the first-project seal of s's
+// installation does not apply. s is left as it is.
+func startedApart(t *testing.T, s *Server, dir string) (*Server, *httptest.Server, *bytes.Buffer) {
+	t.Helper()
+	cfg := s.cfg
+	cfg.Root, cfg.ProjectDir, cfg.deskID, cfg.parent = nil, dir, "", nil
+	cfg.DeskConfigDir = t.TempDir()
+	logged := &bytes.Buffer{}
+	cfg.Logger = log.New(logged, "", 0)
+	apart, ts := startDesk(t, cfg)
+	t.Cleanup(func() { apart.Close(); ts.Close() })
+	return apart, ts, logged
+}
+
 // stoppedAfterNaming is a signing upgrade stopped after jpack.json names the
 // key and the lock pins it, before its marker is removed: the stop the line
 // audit's finding 1 begins with. It answers the name the key was made under.
@@ -89,9 +128,13 @@ func movedAside(t *testing.T, project string) string {
 // nothing** (the line audit's finding 1). A signing upgrade publishes
 // jpack.json and its lock and stops before its marker goes. The project is
 // moved, and another project is put at its old path: a start there names
-// that project otherwise, and leaves the key, its list and its marker; a
-// start on the moved project names it as before, removes only the marker,
-// and its decision record reads the key.
+// that project otherwise, and leaves the key, its list and its marker. The
+// moved folder is then another project to the installation, sealed to the
+// project at its first path: a start on it is refused in words and leaves
+// the key, its list and its marker. Started in an installation of its own,
+// the moved project is named as before. With the storage line off there is no
+// seal (v0.13.2): a start on the moved project names it as before, removes
+// only the marker, and its decision record reads the key.
 func TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing(t *testing.T) {
 	u := newSigningUpgrade(t, nil)
 	name := stoppedAfterNaming(t, u)
@@ -106,15 +149,30 @@ func TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing(t *testing.T) {
 		t.Fatalf("a start on the project at the old path left %q: %s", got, logged)
 	}
 
-	again, ts, logged := startedAt(t, there, moved)
-	if got := again.signingKeyName(); got != name {
-		t.Errorf("the moved project is named %s, want %s", got, name)
+	if !storageLineOn() {
+		again, ts, logged := startedAt(t, there, moved)
+		if got := again.signingKeyName(); got != name {
+			t.Errorf("the moved project is named %s, want %s", got, name)
+		}
+		if got := u.keyFiles(t); !slices.Equal(got, []string{name + ".keys.jsonl", name + ".seed"}) {
+			t.Errorf("a start on the moved project left %q: %s", got, logged)
+		}
+		if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{key1}) {
+			t.Errorf("the moved project's decision record shows %+v %q", panel.Keys, refusal)
+		}
+		return
 	}
-	if got := u.keyFiles(t); !slices.Equal(got, []string{name + ".keys.jsonl", name + ".seed"}) {
-		t.Errorf("a start on the moved project left %q: %s", got, logged)
+	refusedBySeal(t, there, moved)
+	if got := u.keyFiles(t); !slices.Equal(got, []string{name + ".creating", name + ".keys.jsonl", name + ".seed"}) {
+		t.Errorf("a refused start on the moved project left %q", got)
 	}
-	if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{key1}) {
-		t.Errorf("the moved project's decision record shows %+v %q", panel.Keys, refusal)
+
+	apart, _, logged := startedApart(t, there, moved)
+	if got := apart.signingKeyName(); got != name {
+		t.Errorf("the moved project is named %s, want %s: %s", got, name, logged)
+	}
+	if got := u.keyFiles(t); !slices.Equal(got, []string{name + ".creating", name + ".keys.jsonl", name + ".seed"}) {
+		t.Errorf("a start on the moved project in its own installation left %q: %s", got, logged)
 	}
 }
 
@@ -162,9 +220,12 @@ func keysUnder(t *testing.T, u *signingUpgrade, name string) []string {
 // it unfinished, named by jpack.json. The project is moved and another is
 // put at its path: a start there, whether or not that project has a private
 // folder, removes nothing, since a name made from a path is not bound to one
-// project; a start on the moved project takes the name its jpack.json names
-// as its identity, and removes only the marker. That identity records no
-// folder, since a copy's jpack.json names the same key (issue #319): it is
+// project. The moved folder is then another project to the installation,
+// sealed to the project at its first path: a start on it is refused in words
+// and removes nothing. With the storage line off there is no seal (v0.13.2):
+// a start on the moved project takes the name its jpack.json names as its
+// identity, and removes only the marker. That identity records no folder,
+// since a copy's jpack.json names the same key (issue #319): it is
 // unresolved, and asks the owner, until the owner says this folder is the
 // project the key was made for, which binds it to this folder.
 func TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves(t *testing.T) {
@@ -189,28 +250,35 @@ func TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves(t *testing.T) {
 				t.Errorf("the project at the path took the path's name %s as its identity", legacy)
 			}
 
-			again, ts, logged := startedAt(t, there, moved)
-			if got := again.signingKeyName(); got != legacy {
-				t.Errorf("the moved project is named %s, want the name its jpack.json names, %s: %s", got, legacy, logged)
+			if !storageLineOn() {
+				again, ts, logged := startedAt(t, there, moved)
+				if got := again.signingKeyName(); got != legacy {
+					t.Errorf("the moved project is named %s, want the name its jpack.json names, %s: %s", got, legacy, logged)
+				}
+				if got := readFile(t, filepath.Join(moved, ".desk-private", "project.json")); got != string(identityRecord{ID: legacy, Path: again.projectDir}.line()) {
+					t.Errorf("the moved project's identity is %q", got)
+				}
+				if !again.startupUnresolved() || !strings.Contains(logged.String(), "a copy's jpack.json names the same key") {
+					t.Errorf("an identity taken from jpack.json is not unresolved: %s", logged)
+				}
+				if got := keysUnder(t, u, legacy); !slices.Equal(got, all[1:]) {
+					t.Errorf("a start on the moved project left %q: %s", got, logged)
+				}
+				if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept {
+					t.Errorf("the moved project's decision record shows %+v %q", panel.Keys, refusal)
+				}
+				offer := offerOf(t, again)
+				if offer == nil || offer.Kind != "unbound" {
+					t.Fatalf("the decision record asks %+v", offer)
+				}
+				if status, data := resolve(t, ts, identityMoved, offer.Moved); status != http.StatusOK || again.startupUnresolved() || readFile(t, filepath.Join(moved, ".desk-private", "project.json")) != identityLine(legacy, again.projectDir, "") {
+					t.Errorf("the owner's answer was answered %d %s", status, data)
+				}
+				return
 			}
-			if got := readFile(t, filepath.Join(moved, ".desk-private", "project.json")); got != string(identityRecord{ID: legacy, Path: again.projectDir}.line()) {
-				t.Errorf("the moved project's identity is %q", got)
-			}
-			if !again.startupUnresolved() || !strings.Contains(logged.String(), "a copy's jpack.json names the same key") {
-				t.Errorf("an identity taken from jpack.json is not unresolved: %s", logged)
-			}
-			if got := keysUnder(t, u, legacy); !slices.Equal(got, all[1:]) {
-				t.Errorf("a start on the moved project left %q: %s", got, logged)
-			}
-			if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept {
-				t.Errorf("the moved project's decision record shows %+v %q", panel.Keys, refusal)
-			}
-			offer := offerOf(t, again)
-			if offer == nil || offer.Kind != "unbound" {
-				t.Fatalf("the decision record asks %+v", offer)
-			}
-			if status, data := resolve(t, ts, identityMoved, offer.Moved); status != http.StatusOK || again.startupUnresolved() || readFile(t, filepath.Join(moved, ".desk-private", "project.json")) != identityLine(legacy, again.projectDir, "") {
-				t.Errorf("the owner's answer was answered %d %s", status, data)
+			refusedBySeal(t, there, moved)
+			if got := keysUnder(t, u, legacy); !slices.Equal(got, all) {
+				t.Errorf("a refused start on the moved project left %q", got)
 			}
 		})
 	}

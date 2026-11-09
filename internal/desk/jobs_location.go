@@ -12,11 +12,17 @@ type jobsLocation struct{ Dir, Workspace, Owner string }
 // Server and offline enablement share the same retained Runner namespace.
 // Machine workspace identity is deliberately not a Runner namespace.
 func resolveJobsLocation(config, project, deskID string, home *deskHome) (jobsLocation, error) {
+	if err := validateRunnerPathFields(config, project); err != nil {
+		return jobsLocation{}, err
+	}
 	location := jobsLocation{filepath.Join(config, "jobs", digestOf([]byte(project))), digestOf([]byte(project)), "local-owner:" + digestOf([]byte(config))}
 	if home != nil {
 		location.Owner = "local-owner:" + home.Registry.Owner
 		entry := home.entry(project)
 		if entry != nil {
+			if err := validateRunnerPathFields(entry.RunnerWorkspace, location.Owner); err != nil {
+				return jobsLocation{}, err
+			}
 			return jobsLocation{filepath.Join(project, ".desk-private", "jobs"), entry.RunnerWorkspace, location.Owner}, nil
 		}
 	}
@@ -30,6 +36,9 @@ func resolveJobsLocation(config, project, deskID string, home *deskHome) (jobsLo
 	return location, nil
 }
 func offlineJobsLocation(config string, project *ProjectRoot) (jobsLocation, error) {
+	if err := validateRunnerPathFields(config, project.dir); err != nil {
+		return jobsLocation{}, err
+	}
 	home, err := readDeskHome(config)
 	if err != nil {
 		return jobsLocation{}, policyMachineRefusal()

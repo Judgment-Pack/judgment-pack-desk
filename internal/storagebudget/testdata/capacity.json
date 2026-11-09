@@ -1,0 +1,12 @@
+[
+ {"name":"byte exact headroom","resources":1,"available":{"bytes":100},"headroom":{"bytes":10},"promised":{"bytes":90},"allowed":true},
+ {"name":"byte one over","resources":1,"available":{"bytes":100},"headroom":{"bytes":10},"promised":{"bytes":91},"allowed":false},
+ {"name":"finite inode exact","resources":2,"available":{"inodes":10},"headroom":{"inodes":2},"promised":{"inodes":8},"allowed":true},
+ {"name":"finite inode exhausted","resources":2,"available":{"inodes":0},"promised":{"inodes":1},"allowed":false},
+ {"name":"shared bytes and separate inode cap","resources":3,"available":{"bytes":100,"inodes":3},"headroom":{"bytes":10,"inodes":1},"promised":{"bytes":80,"inodes":3},"allowed":false},
+ {"name":"headroom subtract underflow","resources":1,"available":{"bytes":1},"headroom":{"bytes":2},"promised":{"bytes":1},"allowed":false},
+ {"name":"no implicit inode count on byte-only restriction","resources":1,"available":{"bytes":100,"inodes":1},"promised":{"bytes":1},"allowed":false},
+ {"name":"unknown resource is not dynamic","resources":0,"available":{"bytes":100},"promised":{"bytes":1},"allowed":false},
+ {"name":"undefined sentinel is not unlimited","resources":2,"available":{"inodes":18446744073709551615},"promised":{"inodes":1},"allowed":false},
+ {"name":"byte finite maximum","resources":1,"available":{"bytes":1152921504606846976},"promised":{"bytes":1152921504606846976},"allowed":true}
+]

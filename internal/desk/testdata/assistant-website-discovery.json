@@ -1,0 +1,54 @@
+{
+  "base": {
+    "version": 1, "seed": "https://example.org/report", "origin": "https://example.org",
+    "pages": [
+      {"url":"https://example.org/report","from":"","depth":0,"status":"discovered","title":"Home","reason":""},
+      {"url":"https://example.org/child","from":"https://example.org/report","depth":1,"status":"discovered","title":"Child","reason":""},
+      {"url":"https://example.org/deep","from":"https://example.org/child","depth":2,"status":"discovered","title":"Deep","reason":""},
+      {"url":"https://example.org/next","from":"https://example.org/deep","depth":3,"status":"skipped","title":"","reason":"depth-limit"}
+    ],
+    "limits":{"pages":10,"depth":2,"links":100,"bytes":8388608,"seconds":45},
+    "stopReason":"depth-limit","bytes":800,"requests":3,"externalLinks":1
+  },
+  "cases": [
+    {"name":"ordered discovery","edits":[],"valid":true},
+    {"name":"finished","edits":[{"path":["stopReason"],"value":"finished"}],"valid":true},
+    {"name":"page limit","edits":[{"path":["stopReason"],"value":"page-limit"}],"valid":true},
+    {"name":"byte limit","edits":[{"path":["stopReason"],"value":"byte-limit"}],"valid":true},
+    {"name":"time limit","edits":[{"path":["stopReason"],"value":"time-limit"}],"valid":true},
+    {"name":"link limit","edits":[{"path":["stopReason"],"value":"link-limit"}],"valid":true},
+    {"name":"request limit","edits":[{"path":["stopReason"],"value":"request-limit"}],"valid":true},
+    {"name":"robots unavailable","edits":[{"path":["stopReason"],"value":"robots-unavailable"}],"valid":true},
+    {"name":"blocked map entry","edits":[{"path":["pages",1,"status"],"value":"blocked"}],"valid":true},
+    {"name":"failed map entry","edits":[{"path":["pages",1,"status"],"value":"failed"}],"valid":true},
+    {"name":"unlisted status","edits":[{"path":["pages",1,"status"],"value":"available"}],"valid":false},
+    {"name":"unlisted stop","edits":[{"path":["stopReason"],"value":"complete"}],"valid":false},
+    {"name":"wrong origin","edits":[{"path":["origin"],"value":"https://other.org"}],"valid":false},
+    {"name":"foreign page","edits":[{"path":["pages",1,"url"],"value":"https://other.org/child"}],"valid":false},
+    {"name":"duplicate page","edits":[{"path":["pages",1,"url"],"value":"https://example.org/report"}],"valid":false},
+    {"name":"missing parent","edits":[{"path":["pages",1,"from"],"value":"https://example.org/missing"}],"valid":false},
+    {"name":"forward parent","edits":[{"path":["pages",1,"from"],"value":"https://example.org/deep"}],"valid":false},
+    {"name":"wrong depth","edits":[{"path":["pages",1,"depth"],"value":2}],"valid":false},
+    {"name":"depth beyond three","edits":[{"path":["pages",3,"depth"],"value":4}],"valid":false},
+    {"name":"discovered beyond two","edits":[{"path":["pages",3,"status"],"value":"discovered"}],"valid":false},
+    {"name":"wrong seed entry","edits":[{"path":["pages",0,"url"],"value":"https://example.org/elsewhere"}],"valid":false},
+    {"name":"wrong pages limit","edits":[{"path":["limits","pages"],"value":11}],"valid":false},
+    {"name":"wrong depth limit","edits":[{"path":["limits","depth"],"value":3}],"valid":false},
+    {"name":"wrong links limit","edits":[{"path":["limits","links"],"value":101}],"valid":false},
+    {"name":"wrong bytes limit","edits":[{"path":["limits","bytes"],"value":8388609}],"valid":false},
+    {"name":"wrong seconds limit","edits":[{"path":["limits","seconds"],"value":46}],"valid":false},
+    {"name":"negative bytes","edits":[{"path":["bytes"],"value":-1}],"valid":false},
+    {"name":"oversized bytes","edits":[{"path":["bytes"],"value":8388609}],"valid":false},
+    {"name":"requests bound","edits":[{"path":["requests"],"value":31}],"valid":false},
+    {"name":"external bound","edits":[{"path":["externalLinks"],"value":10001}],"valid":false},
+    {"name":"missing zero depth","edits":[{"path":["pages",0,"depth"],"remove":true}],"valid":false},
+    {"name":"missing counter","edits":[{"path":["bytes"],"remove":true}],"valid":false}
+  ],
+  "origins": [
+    {"a":"https://example.org:443/a","b":"https://EXAMPLE.org/b","same":true},
+    {"a":"https://éxample.org/a","b":"https://xn--xample-9ua.org/b","same":true},
+    {"a":"https://example.org/a","b":"https://www.example.org/a","same":false},
+    {"a":"https://example.org/a","b":"https://example.org.evil/a","same":false},
+    {"a":"http://example.org/a","b":"https://example.org/a","same":false}
+  ]
+}

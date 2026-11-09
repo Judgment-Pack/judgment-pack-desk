@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DeskConfigProvider, DeskConfigFixture } from '../config/DeskConfigProvider'
 import { effectiveConfig } from '../config/deskConfig'
+import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
 import { testQueryClient } from '../testing/harness'
 import { AI_CONNECTIONS_KEY, connectionAssistant, deskAIConnections, resolveAIConnection, type AIRegistry, type AIConnection } from './aiConnections'
 import { AIConnectionsSettings } from './AIConnectionsSettings'
@@ -27,7 +28,7 @@ function setup(child:React.ReactNode){
  vi.stubGlobal('fetch',async(url:string,init:RequestInit={})=>{
   const path=new URL(url,'http://localhost'),headers=new Headers(init.headers),body=typeof init.body==='string'?JSON.parse(init.body):undefined
   requests.push({path:path.pathname,headers})
-  if(path.pathname==='/api/assistant/relay/v1/models')return Response.json({data:[{id:headers.get('X-Assistant-Connection')===alpha?'work-extra':'personal-extra'}]})
+  if(path.pathname==='/api/assistant/models')return Response.json({data:[{id:headers.get('X-Assistant-Connection')===alpha?'work-extra':'personal-extra'}]})
   if(init.method==='PUT')writes.push({url:path.pathname,body,headers})
   if(path.pathname==='/api/ai-connections'){
    if(init.method==='PUT'){
@@ -124,16 +125,32 @@ it('discovers API models for the edited desk connection and saves its override w
  fireEvent.click(work.getByRole('checkbox',{name:'Use connection model defaults'}))
  await waitFor(()=>expect((work.getByRole('button',{name:'Refresh models'}) as HTMLButtonElement).disabled).toBe(false))
  fireEvent.click(work.getByRole('button',{name:'Refresh models'}))
- await waitFor(()=>expect(state.requests.some(r=>r.path==='/api/assistant/relay/v1/models')).toBe(true))
+ await waitFor(()=>expect(state.requests.filter(r=>r.path==='/api/assistant/models')).toHaveLength(1))
  fireEvent.click(work.getByRole('button',{name:/Allowed models/}))
  fireEvent.click(await screen.findByRole('checkbox',{name:'work-extra'}))
  fireEvent.keyDown(screen.getByRole('checkbox',{name:'work-extra'}),{key:'Escape'})
  fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
  await screen.findByText('Assistant preferences saved.')
- const discovered=state.requests.find(r=>r.path==='/api/assistant/relay/v1/models')!
+ const discovered=state.requests.find(r=>r.path==='/api/assistant/models')!
  expect(discovered.headers.get('X-Assistant-Connection')).toBe(alpha)
  expect(discovered.headers.get('X-Assistant-Revision')).toBe('c'.repeat(64))
  const file=JSON.parse(state.writes[0]!.body.content)
  expect(file.models[alpha].models).toContain('work-extra')
  expect(state.registry.connections[0]!.assistant.endpoint!.models).toEqual(['same-model'])
+})
+
+it('saves and reloads the project critic in the connected profile form',async()=>{
+ const state=setup(<DeskAISettings unavailable={false}/>)
+ const control=await screen.findByRole('combobox',{name:'Project review default'})
+ fireEvent.click(control);fireEvent.click(screen.getByRole('option',{name:'On'}))
+ fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
+ await screen.findByText('Assistant preferences saved.')
+ const write=state.writes.find(row=>row.url==='/api/file')!
+ expect(JSON.parse(write.body.content)).toMatchObject({profileVersion:2,inherit:true,critic:'on'})
+ // Saving starts an asynchronous reload; the success message precedes its completion.
+ await waitFor(()=>{
+  expect(state.requests.filter(row=>row.path==='/api/desk-config')).toHaveLength(2)
+  expect(state.client.getQueryState(DESK_CONFIG_QUERY_KEY)?.fetchStatus).toBe('idle')
+  expect(screen.getByRole('combobox',{name:'Project review default'}).textContent).toBe('On')
+ })
 })

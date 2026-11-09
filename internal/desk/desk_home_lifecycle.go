@@ -17,6 +17,34 @@ import (
 	"time"
 )
 
+// errDeskHomeMoveAfterStorage refuses, in v0.14.0, moving a whole installation
+// into a Desk home and moving a Desk home once the installation's storage is
+// set up: at Desk home status, preview and confirmation, the only ways a move
+// is asked for. Storage registers its folders where they are, and no transition
+// carries its owner record and catalog to another folder yet, so the moved
+// installation would start with its storage refused. Storage-aware home moves
+// are Desk #698. A project move (/api/project-location) is unchanged.
+var errDeskHomeMoveAfterStorage = errors.New("Desk home moves are not available once storage is set up: in this version, storage does not move with a whole installation or a Desk home, so Desk keeps them where they are. Home moves come in a later version. Project moves remain available: to move a project that is not in a Desk home, use Move to… under Admin → General → Project location.")
+
+// homeMoveStorageRefusal is errDeskHomeMoveAfterStorage where this
+// installation's settings folder holds any name storage sets up
+// (storageInstallationNames), even partly. A name Desk cannot rule out counts
+// as set up.
+func (s *Server) homeMoveStorageRefusal() error {
+	off := s.deskOwner().storageLineOff
+	for _, name := range storageInstallationNames {
+		// v0.13.2's backups and restores make this lock too; with the storage
+		// line off it says nothing about storage being set up.
+		if off && name == ".data-transfer.lock" {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(s.configDir, name)); !errors.Is(err, os.ErrNotExist) {
+			return errDeskHomeMoveAfterStorage
+		}
+	}
+	return nil
+}
+
 type homeMoveState struct {
 	queued      atomic.Bool
 	mu          sync.Mutex
@@ -45,31 +73,94 @@ func openHomeLease(config string, exclusive bool) (*os.File, error) {
 	}
 	return file, nil
 }
+
+// Startup uses an existing-only opener. Recovery's legacy creating wrapper
+// above remains separate; startup must never replace a missing original lock.
+func openHomeLeaseExistingRoot(root *os.Root, exclusive bool) (*os.File, error) {
+	before, err := root.Lstat(".home-use.lock")
+	if err != nil {
+		return nil, err
+	}
+	file, err := root.OpenFile(".home-use.lock", os.O_RDWR|openNoFollow|openNonBlocking, 0)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateHomeLease(root, file, before); err != nil {
+		return nil, errors.Join(err, file.Close())
+	}
+	if err = lockPrivateData(file, exclusive); err != nil {
+		return nil, errors.Join(err, file.Close())
+	}
+	if err = validateHomeLease(root, file, before); err != nil {
+		return nil, errors.Join(err, file.Close())
+	}
+	return file, nil
+}
+func validateHomeLease(root *os.Root, file *os.File, identity os.FileInfo) error {
+	before, err := root.Lstat(".home-use.lock")
+	if err != nil {
+		return err
+	}
+	held, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	after, err := root.Lstat(".home-use.lock")
+	if err != nil {
+		return err
+	}
+	for _, info := range []os.FileInfo{before, held, after} {
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || ownedByUs("Desk home lease", info) != nil || !os.SameFile(identity, info) {
+			return errors.New("Desk home lease is unsafe or changed.")
+		}
+	}
+	return nil
+}
 func readHomeTransaction(path string) (*deskHomeTransaction, error) {
 	raw, err := readHomeMetadata(path, 4<<20)
 	if err != nil || raw == nil {
 		return nil, err
 	}
-	var tx deskHomeTransaction
-	if decodeDataJSON(raw, &tx) != nil || tx.Version != 1 || !validProjectHistoryPath(tx.Config) || !validProjectHistoryPath(tx.Destination) || len(tx.Renames) > 10000 || len(tx.Writes) > 2000 || len(tx.Prelude) > 1 {
-		return nil, errors.New("Desk home recovery data is invalid.")
-	}
-	for _, op := range tx.Renames {
-		if !validProjectHistoryPath(op.From) || !validProjectHistoryPath(op.To) || op.Identity == "" {
-			return nil, errors.New("Desk home recovery paths are invalid.")
-		}
-	}
-	for _, write := range append(append([]homeWrite{}, tx.Prelude...), tx.Writes...) {
-		if !validProjectHistoryPath(write.Path) || write.Before == "" {
-			return nil, errors.New("Desk home recovery settings are invalid.")
-		}
-	}
-	return &tx, nil
+	return decodeHomeTransaction(raw)
 }
-func finishHomeTransaction(path string) error {
-	tx, err := readHomeTransaction(path)
-	if err != nil || tx == nil || tx.Complete {
+func finishHomeTransaction(path string) (err error) {
+	// Keep the actual journal read pinned through completed acknowledgement.
+	// A completed retained move needs no participant locks or provider access.
+	root, err := OpenProjectRoot(filepath.Dir(path))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
 		return err
+	}
+	completedRetained := false
+	defer func() {
+		closeErr := root.Close()
+		if completedRetained {
+			closeErr = errors.Join(closeErr, dialectArtifactOwnerStep(context.Background(), "home-move-journal.root-close"))
+		}
+		err = errors.Join(err, closeErr)
+	}()
+	raw, info, err := readHomeMoveFile(root.own.root, filepath.Base(path), homeTransactionLimit)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	tx, err := decodeHomeTransaction(raw)
+	if err != nil {
+		return err
+	}
+	if tx.Complete {
+		if tx.Retained == nil {
+			return nil
+		}
+		completedRetained = true
+		return acknowledgeHomeMoveFile(root, path, raw, info, "home-move-journal", func() error { return nil })
+	}
+	if tx.Retained != nil {
+		return applyHomeTransaction(path, tx)
 	}
 	config := tx.Config
 	// The original platform folder is still authoritative after its rename.
@@ -256,7 +347,7 @@ func (s *Server) homeWorkIdle(ctx context.Context) error {
 	}
 	return nil
 }
-func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) error {
+func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) (err error) {
 	if s.cfg.HomeMoveShutdown == nil {
 		return errors.New("This launch cannot stop safely for a Desk home move. Restart with the local Desk launcher.")
 	}
@@ -291,13 +382,63 @@ func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) 
 			return err
 		}
 	}
-	s.writes.Lock()
-	defer s.writes.Unlock()
+	if s.homeLease == nil {
+		return errors.New("Desk cannot safely exclude other processes from this move.")
+	}
+	if err = lockPrivateData(s.homeLease, true); err != nil {
+		_ = lockPrivateData(s.homeLease, false)
+		return errors.New("Close other Desk processes before moving this installation.")
+	}
+	queued := false
+	defer func() {
+		if !queued {
+			err = errors.Join(err, lockPrivateData(s.homeLease, false))
+		}
+	}()
+	initial, err := s.planDeskHome(request.Destination)
+	if err != nil {
+		return err
+	}
+	if err := homeJournalMoveBlocker(initial); err != nil {
+		return err
+	}
+	if len(initial.Blockers) > 0 {
+		return errors.New("Resolve all move blockers first.")
+	}
+	providers, err := pinDialectArtifactSelectedProviders(ctx, s, homeMoveProviderIDs(initial.Retained))
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, providers.Close()) }()
+	var retained *dialectArtifactHomeMoveHold
+	if initial.Retained != nil {
+		before := deskHomeTransaction{Version: 2, Destination: initial.Destination, Config: initial.Config, Parent: initial.Parent, ParentIdentity: initial.ParentIdentity}
+		for _, move := range initial.Moves {
+			before.addRename(move.From, move.To, move.Identity)
+		}
+		retained, err = openDialectArtifactHomeMoveHold(ctx, &before, initial.Retained, s, s.homeLease, providers)
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, retained.Close()) }()
+	} else {
+		close, e := s.holdUnretainedHomeMove(ctx, initial)
+		if e != nil {
+			return e
+		}
+		defer func() { err = errors.Join(err, close()) }()
+	}
 	plan, err := s.planDeskHome(request.Destination)
 	if err != nil {
 		return err
 	}
-	if request.Token == "" || !hmac.Equal([]byte(request.Token), []byte(plan.Token)) {
+	if err := homeJournalMoveBlocker(plan); err != nil {
+		return err
+	}
+	if len(plan.Blockers) > 0 {
+		return errors.New("Resolve all move blockers first.")
+	}
+	if request.Token == "" || !hmac.Equal([]byte(request.Token), []byte(plan.Token)) || homeMoveSnapshotDigest(initial.Retained) != homeMoveSnapshotDigest(plan.Retained) {
 		return errors.New("Desk locations or history changed. Review the move again.")
 	}
 	for _, entry := range plan.Registry.Desks {
@@ -309,19 +450,28 @@ func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) 
 	if err != nil {
 		return err
 	}
-	if s.homeLease == nil {
-		return errors.New("Desk cannot safely exclude other processes from this move.")
-	}
-	if err = lockPrivateData(s.homeLease, true); err != nil {
-		_ = lockPrivateData(s.homeLease, false)
-		return errors.New("Close other Desk processes before moving this installation.")
-	}
-	queued := false
-	defer func() {
-		if !queued {
-			_ = lockPrivateData(s.homeLease, false)
+	if retained != nil {
+		retained.plan = plan.Retained
+		retained.tx = &tx
+		if err = retained.check(); err != nil {
+			return err
 		}
-	}()
+		if err = freezeDialectArtifactHomeMove(ctx, &tx, plan.Retained, retained.metadata); err != nil {
+			return err
+		}
+		if plan.Retained.SourceHome == "" {
+			retained.destination, err = openHomeMoveRoot(&tx, tx.Destination, plan.Retained.DestinationIdentity)
+			if err != nil {
+				return err
+			}
+		}
+		if err = retained.check(); err != nil {
+			return err
+		}
+	}
+	if _, err = marshalHomeTransaction(tx); err != nil {
+		return err
+	}
 	journal := homeJournalPath(s.configDir)
 	previous, err := readHomeTransaction(journal)
 	if err != nil {
@@ -332,13 +482,13 @@ func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) 
 	}
 	if previous != nil {
 		// Preserve completed migration metadata under platform custody.
-		archive, err := openPrivateDataRoot(filepath.Join(s.configDir, "migrations"), true)
+		archive, err := openPrivateDataRootBy(filepath.Join(s.configDir, "migrations"), true, s.creation(nil))
 		if err != nil {
 			return err
 		}
 		data, _ := json.Marshal(previous)
 		err = writePrivateData(archive, digestOf(data)+".json", data)
-		archive.Close()
+		err = errors.Join(err, archive.Close())
 		if err != nil {
 			return err
 		}
@@ -347,7 +497,10 @@ func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) 
 			return err
 		}
 		err = parent.own.root.Remove(filepath.Base(journal))
-		parent.Close()
+		if err == nil {
+			err = parent.own.dirFile.Sync()
+		}
+		err = errors.Join(err, parent.Close())
 		if err != nil {
 			return err
 		}
@@ -357,19 +510,31 @@ func (s *Server) queueHomeMove(ctx context.Context, request projectMoveRequest) 
 	if err := ctx.Err(); err != nil {
 		return errors.New("The move confirmation expired. Review the move again.")
 	}
-	if err = saveHomeTransaction(journal, tx, true); err != nil {
-		return err
+	saveErr := saveHomeTransaction(journal, tx, true)
+	// A failed write may already have claimed the durable queue. Keep admission
+	// retired whenever a journal exists or its acknowledgement is uncertain.
+	if saveErr != nil {
+		pending, readErr := readHomeTransaction(journal)
+		if readErr == nil && pending == nil {
+			return saveErr
+		}
 	}
+
 	s.homeMove.journal, s.homeMove.destination = journal, plan.Destination
 	s.homeMove.queued.Store(true)
 	queued = true
+	// Only the saved, authoritative queue transition retires every Desk view.
+	// Preview and failed confirmations must leave review admission usable.
+	if s.retainedReviews != nil {
+		s.retainedReviews.closeServer(s, true)
+	}
 	// Prevent periodic preparation and timestamp work from starting while main
 	// drains HTTP and closes every worker. Runner closes before any file moves.
 	for _, server := range servers {
 		server.location.moving.Store(true)
 		server.markProjectMoved(plan.Destination)
 	}
-	return nil
+	return saveErr
 }
 func (s *Server) handleHomeMove(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
@@ -379,6 +544,10 @@ func (s *Server) handleHomeMove(w http.ResponseWriter, r *http.Request) {
 	var request projectMoveRequest
 	if err != nil || decodeDataJSON(raw, &request) != nil {
 		writeJSONCoded(w, 400, CodeBadRequest, "Choose a Desk home and review the move first.")
+		return
+	}
+	if err = s.homeMoveStorageRefusal(); err != nil {
+		writeJSONCoded(w, 409, CodeStale, err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)

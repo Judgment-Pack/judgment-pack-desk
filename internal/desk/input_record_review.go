@@ -32,6 +32,12 @@ type inputRecordReviewEvent struct {
 }
 
 func inputRecordDigest(record preparedInputRecord) string {
+	// Review identity retains the historical null-as-blank digest domain.
+	var err error
+	record, err = legacyInputRecord(record)
+	if err != nil {
+		return "" // invalid custody cannot supply an accepted review digest
+	}
 	record.Review = nil
 	raw, _ := json.Marshal(record)
 	return digestOf(raw)
@@ -120,7 +126,7 @@ func (s *Server) reviewInputRecord(r *http.Request, doc *inputPreparation, now s
 func validateInputRecordReviews(doc inputPreparation) error {
 	valid := func(review inputRecordReview, record preparedInputRecord) bool {
 		_, err := time.Parse(time.RFC3339Nano, review.At)
-		return err == nil && review.RecordID == record.ID && review.RecordDigest == inputRecordDigest(record) && review.RecipeVersion > 0 && review.RecipeVersion <= doc.RecipeVersion && (review.Decision == "accepted" || review.Decision == "needs-information" || review.Decision == "rejected")
+		return err == nil && review.RecordDigest != "" && review.RecordID == record.ID && review.RecordDigest == inputRecordDigest(record) && review.RecipeVersion > 0 && review.RecipeVersion <= doc.RecipeVersion && (review.Decision == "accepted" || review.Decision == "needs-information" || review.Decision == "rejected")
 	}
 	for _, event := range doc.Reviews {
 		if event.Record.Review != nil || !valid(event.Review, event.Record) {

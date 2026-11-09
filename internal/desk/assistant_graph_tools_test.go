@@ -1,0 +1,456 @@
+package desk
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/gate"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/relay"
+)
+
+const assistantGraphConfig = `{"configVersion":"5","packs":{"one":{"path":"one.json","description":"A pack"}},"graphs":{"flow":{"path":"flow.graph.json","description":"A graph"}}}`
+const assistantGraphOriginal = "{\n \"formatVersion\":\"1\", \"nodes\":{\"first\":{\"pack\":\"one\"}}, \"edges\":[]\n}"
+const assistantGraphCandidate = "{\n \"formatVersion\":\"1\", \"nodes\":{\"first\":{\"pack\":\"one\"}}, \"edges\":[], \"fixture\":{\"missing\":null,\"flag\":false,\"zero\":0,\"literal\":\"50\",\"number\":1.20}\n}"
+const assistantGraphCLI = `
+if sys.argv[1:3]==['experimental','graph']:
+ command=sys.argv[3]; text=sys.stdin.read()
+ with open('graph-cli.jsonl','a') as f: f.write(json.dumps({'command':command,'args':sys.argv[4:],'input':text})+'\n')
+ if command=='list': print('{"outputVersion":"2","command":"experimental graph list","status":"resolved","graphs":[{"id":"flow","path":"flow.graph.json"}]}')
+ elif command=='evaluate': print('{"outputVersion":"2","command":"experimental graph evaluate","status":"evaluated","rehearsal":true,"value":{"number":1.20,"literal":"50","missing":null,"flag":false,"zero":0}}')
+ else: print('{ "outputVersion":"2", "command":"experimental graph '+command+'", "status":"valid", "number":1.20, "literal":"50", "missing":null, "flag":false, "zero":0 }')
+ sys.exit(0)
+`
+
+func assistantGraphSetup(t *testing.T, s *Server, e *assistantRunExecution) *assistantExecution {
+	t.Helper()
+	for name, content := range map[string]string{"jpack.json": assistantGraphConfig, "one.json": "{ \"pack\":\"one\", \"number\":1.20, \"flag\":false }", "flow.graph.json": assistantGraphOriginal} {
+		assistantRunMust(t, os.WriteFile(filepath.Join(s.cfg.ProjectDir, name), []byte(content), 0600))
+	}
+	assistantExecutionRuntimeFixture(t, s, e)
+	peer := strings.Replace(assistantExecutionPeer, "with open('execution-fixture.json')", assistantGraphCLI+"\nwith open('execution-fixture.json')", 1)
+	peer = strings.Replace(peer, "{'name':'served','arguments':[]}", "{'name':'served','arguments':[]},{'name':'author_graph','arguments':[{'name':'relationship','required':True},{'name':'packs','required':True}]}", 1)
+	peer = strings.Replace(peer, "'text':'SERVED-RUNTIME-PROMPT'", "'text':('RUNTIME GRAPH CONTRACT '+p['arguments']['packs']) if name=='author_graph' else 'SERVED-RUNTIME-PROMPT'", 1)
+	assistantRunMust(t, os.WriteFile(s.cfg.JpackBin, []byte(peer), 0700))
+	x, err := e.openAssistantExecution(t.Context(), assistantExecutionPrompt{Name: "served"})
+	assistantRunMust(t, err)
+	t.Cleanup(x.Close)
+	return x
+}
+func assistantGraphFind(t *testing.T, tools []runcontext.HostTool, name string) runcontext.HostTool {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatal("missing tool", name)
+	return runcontext.HostTool{}
+}
+func assistantGraphInvoke(t *testing.T, e *assistantRunExecution, x *assistantExecution, call, name string, args any) runcontext.ToolResult {
+	t.Helper()
+	raw, _ := json.Marshal(args)
+	assistantRunMust(t, e.writer.boundEvent(t.Context(), contract.RunEvent{ToolCall: &contract.ToolCall{Type: "tool_call", CallID: &call, Name: name, Args: raw}}))
+	ctx := context.WithValue(runcontext.WithCallID(t.Context(), call), assistantHostRootKey{}, true)
+	result, err := assistantGraphFind(t, x.Run.HostTools, name).Execute(ctx, raw)
+	assistantRunMust(t, err)
+	assistantRunMust(t, e.writer.boundEvent(t.Context(), contract.RunEvent{ToolResult: &contract.ToolResult{Type: "tool_result", CallID: &call, Name: name, Text: result.Content[0].Text(), IsError: result.Err()}}))
+	return result
+}
+func TestAssistantGraphProducerDurableReadAndProjection(t *testing.T) {
+	s, token, e := assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
+	x := assistantGraphSetup(t, s, e)
+	// The real producer refuses a revision with no root read.
+	no := assistantGraphInvoke(t, e, x, "no-read", "propose_graph", map[string]string{"id": "flow", "content": assistantGraphCandidate})
+	if !no.Err() {
+		t.Fatal("revision without read succeeded")
+	}
+	read := assistantGraphInvoke(t, e, x, "read", "read_decision", map[string]string{"type": "graph", "id": "flow"})
+	if read.Err() || !strings.Contains(read.Content[0].Text(), "1.20") {
+		t.Fatal(read.Value().Text())
+	}
+	// Use the actual canonical checkpoint writer, storage decoder and a newly
+	// constructed registry; read authority is never recaptured from narrative.
+	cp := *assistantExecutionRecord(t, e).Checkpoint
+	assistantRunMust(t, e.Checkpoint(t.Context(), cp))
+	record := assistantExecutionRecord(t, e)
+	raw, _ := json.Marshal(assistantRunLedger{Version: 1, Project: record.Binding.Project, Runs: []assistantRunRecord{record}})
+	_, err := decodeAssistantRunStorage(e.writer.lease.store.name, raw)
+	assistantRunMust(t, err)
+	registry, err := e.assistantGraphTools(x.runtime)
+	assistantRunMust(t, err)
+	x.Run.HostTools = registry.tools
+	proposed := assistantGraphInvoke(t, e, x, "proposal", "propose_graph", map[string]string{"id": "flow", "content": assistantGraphCandidate, "description": "Retained exact graph"})
+	if proposed.Err() {
+		t.Fatal(proposed.Value().Text())
+	}
+	record = assistantExecutionRecord(t, e)
+	if len(record.DomainOutputs) != 1 {
+		t.Fatal("producer payload absent")
+	}
+	out := record.DomainOutputs[0]
+	if out.Draft.Content != assistantGraphCandidate || out.Draft.BaseSHA256 != digestOf([]byte(assistantGraphOriginal)) || out.Draft.Path != "flow.graph.json" || out.CallID != "proposal" {
+		t.Fatalf("candidate changed: %+v", out)
+	}
+	// Exact replay returns the original draft/result and never adds another output.
+	args, _ := json.Marshal(map[string]string{"id": "flow", "content": assistantGraphCandidate, "description": "Retained exact graph"})
+	ctx := context.WithValue(runcontext.WithCallID(t.Context(), "proposal"), assistantHostRootKey{}, true)
+	again, err := assistantGraphFind(t, registry.tools, "propose_graph").Execute(ctx, args)
+	assistantRunMust(t, err)
+	if again.Value().Text() != proposed.Value().Text() || len(assistantExecutionRecord(t, e).DomainOutputs) != 1 {
+		t.Fatal("producer replay generated a new result")
+	}
+	cp = *record.Checkpoint
+	cp.Status = "complete"
+	assistantRunMust(t, e.Checkpoint(t.Context(), cp))
+	assistantRunMust(t, e.writer.State(t.Context(), "complete"))
+	assistantRunMust(t, e.ProjectChat(t.Context()))
+	assistantRunMust(t, e.ProjectChat(t.Context()))
+	saved := policyWorkspaceRead(t, s, token, "/api/conversations")
+	var doc struct {
+		Chats []struct {
+			ID          string       `json:"id"`
+			GraphDrafts []graphDraft `json:"graphDrafts"`
+		} `json:"chats"`
+	}
+	assistantRunMust(t, json.Unmarshal(saved.Content, &doc))
+	if len(doc.Chats[0].GraphDrafts) != 1 || doc.Chats[0].GraphDrafts[0].Content != assistantGraphCandidate {
+		t.Fatal("terminal projection lost graph")
+	}
+	if output := os.Getenv("DESK_GRAPH_READER_OUTPUT"); output != "" {
+		assistantRunMust(t, os.WriteFile(output, saved.Content, 0600))
+	}
+	// The existing detached-draft migration runs as part of projection/deletion.
+	var deleted conversationDocument
+	assistantRunMust(t, json.Unmarshal(saved.Content, &deleted))
+	deleted.Chats = []json.RawMessage{}
+	w := policyWorkspaceCall(s, token, "PUT", "/api/conversations", saved.SHA256, deleted)
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	detached := policyWorkspaceRead(t, s, token, "/api/draft-graphs")
+	if output := os.Getenv("DESK_GRAPH_DETACHED_OUTPUT"); output != "" {
+		assistantRunMust(t, os.WriteFile(output, detached.Content, 0600))
+	}
+	if !bytes.Contains(detached.Content, []byte(out.Draft.DraftID)) || !bytes.Contains(detached.Content, []byte(`"originChatId"`)) {
+		t.Fatal("deletion lost detached graph", string(detached.Content))
+	}
+}
+func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
+	for _, phase := range []string{"work", "plan"} {
+		t.Run(phase, func(t *testing.T) {
+			f := assistantSourceEnrollmentFixture(t, phase)
+			s, e := f.s, f.e
+			x := assistantGraphSetup(t, s, e)
+			// Ordinary chats share Graph, Test and Recipe offers. Keep every tool's
+			// explicit classification; an unknown addition needs a reviewed fixture.
+			effects := map[string]string{
+				"search_sources": "read", "read_link": "read", assistantWebsiteTool: "read",
+				"list_decisions": "read", "read_decision": "read",
+				"get_graph_authoring_instructions": "read", "graph_validate": "read",
+				"graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal",
+				"read_pack_tests": "read", "propose_test_cases": "proposal",
+				"get_dialect_recipe_instructions": "read", "list_dialects": "read",
+				"read_dialect_recipe": "read", "propose_dialect_recipe": "proposal",
+				"read_dialect": "read", "propose_dialect": "proposal",
+				"read_dialect_publication": "read", "propose_dialect_publication": "proposal",
+				"read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal", "request_dialect_research": "workflow",
+			}
+			if phase == "plan" {
+				effects[assistantPlanTool] = "plan"
+			}
+			names := []string{}
+			wireNames := map[string]string{}
+			for _, tool := range x.Run.HostTools {
+				effect, known := effects[tool.Name]
+				if !known || contains(names, tool.Name) {
+					t.Fatal("unknown or duplicate shared offer", tool.Name)
+				}
+				names = append(names, tool.Name)
+				wireNames[tool.Name] = tool.Name
+				if taxonomy, external := assistantExternalOwnerTaxonomies()[tool.Name]; external {
+					if tool.Source == nil || tool.Source.ID != assistantExternalOwnerIDs()[tool.Name] || tool.Effect != "" || tool.Taxonomy == nil || *tool.Taxonomy != taxonomy || tool.EffectClass != runcontext.LegacyClass(&taxonomy) || !assistantExternalSourceDeclaration(tool) {
+						t.Fatal("approved source classification", tool.Name)
+					}
+					wireNames[tool.Name] = runcontext.WireName(tool.Source.ID, tool.Name)
+					if tool.Name == assistantResearchTool {
+						if tool.Approval != "required" || tool.Approve == nil || tool.Delegation != "" {
+							t.Fatal("workflow admission widened")
+						}
+					} else if tool.Delegation != map[string]string{assistantSearchTool: "research", assistantLinkTool: "read", assistantWebsiteTool: "research"}[tool.Name] || tool.Source.VerifyReceipt == nil || tool.Approval != "none" || tool.Approve != nil {
+						t.Fatal("external read admission widened", tool.Name)
+					}
+				} else if effect == "proposal" || effect == "workflow" || effect == "plan" {
+					if tool.Effect != effect || tool.Delegation != "" {
+						t.Fatal("proposal grants", tool.Name)
+					}
+				} else if tool.Name == "search_sources" || tool.Name == assistantWebsiteTool {
+					if tool.Effect != "read" || tool.Delegation != "research" {
+						t.Fatal("search classification", tool.Name)
+					}
+				} else if tool.Effect != "read" || tool.Delegation != "read" {
+					t.Fatal("read classification", tool.Name)
+				}
+			}
+			for name, effect := range effects {
+				if contains(names, name) != (effect == "read" || phase == "work" || effect == "plan" && phase == "plan") {
+					t.Fatal("Work/Plan shared offer", name, names)
+				}
+			}
+			for _, row := range []struct {
+				name string
+				args any
+				want string
+			}{
+				{"list_decisions", map[string]any{}, `"id":"flow"`},
+				{"read_decision", map[string]string{"type": "pack", "id": "one"}, "1.20"},
+				{"get_graph_authoring_instructions", map[string]any{"relationship": "first then next", "packs": []string{"one"}}, "RUNTIME GRAPH CONTRACT [{ \"pack"},
+				{"graph_validate", map[string]string{"content": assistantGraphCandidate}, `"number":1.20`},
+				{"graph_explain", map[string]string{"content": assistantGraphCandidate}, `"number":1.20`},
+				{"graph_rehearse", map[string]string{"id": "flow", "inputs": `{"first":{"facts":{"null":null,"flag":false,"zero":0,"literal":"50","number":1.20},"evidence":{}}}`}, `"rehearsal":true`},
+			} {
+				result := assistantGraphInvoke(t, e, x, phase+row.name, row.name, row.args)
+				if result.Err() || !strings.Contains(result.Content[0].Text(), row.want) {
+					t.Fatalf("%s: %s", row.name, result.Value().Text())
+				}
+			}
+			cli, err := os.ReadFile(filepath.Join(s.cfg.ProjectDir, "graph-cli.jsonl"))
+			assistantRunMust(t, err)
+			if !bytes.Contains(cli, []byte(`--rehearsal`)) || !bytes.Contains(cli, []byte(`1.20`)) {
+				t.Fatal("typed rehearsal input changed", string(cli))
+			}
+			// Host metadata is enrolled by the real adapter's contextual session,
+			// before provider dispatch; opening the execution alone offers none.
+			providerCalls := 0
+			x.Run.Model = func(ctx context.Context, _ string, _ relay.Request) (*http.Response, error) {
+				providerCalls++
+				if providerCalls != 1 {
+					t.Fatal("unexpected graph offer provider request", providerCalls)
+				}
+				profile := contract.DelegatedTaskProfile{ID: "reader", Capabilities: []string{"read"}}
+				_, _, err := x.Run.Children(ctx, profile, func(contract.RunEvent) {})
+				assistantRunMust(t, err)
+				offered := x.gate.Offer()
+				child := gate.ChildPhase(profile, offered, gate.PlanPhase(offered))
+				for name, effect := range effects {
+					if contains(child.Host, wireNames[name]) != (effect == "read" && name != "search_sources" && name != assistantWebsiteTool) {
+						t.Fatal("child shared offer", name, child.Host)
+					}
+				}
+				recorder := httptest.NewRecorder()
+				assistantPolicySSE(recorder, "", nil, "Done.")
+				return recorder.Result(), nil
+			}
+			var adapterEvents []contract.RunEvent
+			emit := x.Run.Emit
+			x.Run.Emit = func(event contract.RunEvent) {
+				adapterEvents = append(adapterEvents, event)
+				emit(event)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
+			if providerCalls != 1 {
+				events, err := json.Marshal(adapterEvents)
+				assistantRunMust(t, err)
+				t.Fatalf("graph offer provider not reached: calls=%d writer=%v events=%s", providerCalls, e.writer.Err(), events)
+			}
+		})
+	}
+}
+func TestAssistantGraphActualEinoProducer(t *testing.T) {
+	var step atomic.Int32
+	u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		n := step.Add(1)
+		var delta map[string]any
+		finish := "tool_calls"
+		sequence := []struct {
+			name string
+			args any
+		}{
+			{"list_decisions", map[string]any{}},
+			{"read_decision", map[string]string{"type": "graph", "id": "flow"}},
+			{"get_graph_authoring_instructions", map[string]any{"relationship": "first then next", "packs": []string{"one"}}},
+			{"graph_validate", map[string]string{"content": assistantGraphCandidate}},
+			{"graph_explain", map[string]string{"content": assistantGraphCandidate}},
+			{"graph_rehearse", map[string]string{"id": "flow", "inputs": `{"first":{"facts":{"null":null,"flag":false,"zero":0,"literal":"50","number":1.20}}}`}},
+			{"propose_graph", map[string]string{"id": "flow", "content": assistantGraphCandidate}},
+		}
+		if int(n) <= len(sequence) {
+			call := sequence[n-1]
+			args, _ := json.Marshal(call.args)
+			delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "provider-call", "type": "function", "function": map[string]any{"name": call.name, "arguments": string(args)}}}}
+		} else {
+			delta = map[string]any{"role": "assistant", "content": "Retained graph."}
+			finish = "stop"
+		}
+
+		raw, _ := json.Marshal(map[string]any{"id": "fixture", "object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}})
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: "+string(raw)+"\n\ndata: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\""+finish+"\"}]}\n\ndata: [DONE]\n\n")
+	})
+	s, _, e := assistantExecutionFixture(t, u.server.URL, "work")
+	x := assistantGraphSetup(t, s, e)
+	// Seven serial host tools and their durable model/checkpoint steps need
+	// headroom under the race detector; this is only the scripted fixture bound.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
+	arrivals := u.arrivals()
+	if len(arrivals) == 0 || !bytes.Contains(arrivals[0].body, []byte("propose_graph")) || !bytes.Contains(arrivals[0].body, []byte("read_decision")) {
+		t.Fatal("actual API offer omitted Graph tools")
+	}
+	record := assistantExecutionRecord(t, e)
+	if len(record.DomainOutputs) != 1 || record.DomainOutputs[0].Draft.Content != assistantGraphCandidate {
+		t.Fatalf("actual API producer failed: outputs=%+v events=%+v writer=%v", record.DomainOutputs, record.Events, e.writer.Err())
+	}
+	if record.Checkpoint.Status != "complete" {
+		t.Fatal("actual API checkpoint did not finish")
+	}
+	cli, err := os.ReadFile(filepath.Join(s.cfg.ProjectDir, "graph-cli.jsonl"))
+	assistantRunMust(t, err)
+	rehearsals := 0
+	for _, line := range bytes.Split(bytes.TrimSpace(cli), []byte("\n")) {
+		var command struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+			Input   string   `json:"input"`
+		}
+		assistantRunMust(t, json.Unmarshal(line, &command))
+		if command.Command == "evaluate" {
+			rehearsals++
+			if !contains(command.Args, "--rehearsal") || command.Input != `{"first":{"facts":{"null":null,"flag":false,"zero":0,"literal":"50","number":1.20}}}` {
+				t.Fatal("physical API rehearsal changed exact typed input or scope")
+			}
+		}
+	}
+	if rehearsals != 1 {
+		t.Fatalf("actual API rehearsals = %d, want one", rehearsals)
+	}
+	assistantRunMust(t, e.writer.State(t.Context(), "complete"))
+	assistantRunMust(t, s.prepareAssistantChatProjection(e.request.Clone(t.Context()), record.ID))
+	assistantRunMust(t, s.writeAssistantChatProjection(e.request.Clone(t.Context()), record.ID))
+	prepared := assistantExecutionRecord(t, e)
+	if prepared.ChatProjection == nil || prepared.ChatProjection.Acknowledged {
+		t.Fatal("write/ack fixture did not retain the unacknowledged prepared projection")
+	}
+	corrupt := prepared
+	corrupt.DomainOutputs = append([]assistantDomainOutput(nil), prepared.DomainOutputs...)
+	corrupt.DomainOutputs[0].Draft.CreatedAt = "2020-01-01T00:00:00Z"
+	if validateAssistantChatProjection(corrupt) == nil {
+		t.Fatal("prepared projection did not bind the exact Graph output")
+	}
+	// Recovery decodes the actual stored terminal receipt and performs only its
+	// saved write/readback/ack; no host operation or model invocation is repeated.
+	data, _ := json.Marshal(assistantRunLedger{Version: 1, Project: prepared.Binding.Project, Runs: []assistantRunRecord{prepared}})
+	_, err = decodeAssistantRunStorage(e.writer.lease.store.name, data)
+	assistantRunMust(t, err)
+	count := step.Load()
+	assistantRunMust(t, e.ProjectChat(t.Context()))
+	assistantRunMust(t, e.ProjectChat(t.Context()))
+	if step.Load() != count || !assistantExecutionRecord(t, e).ChatProjection.Acknowledged {
+		t.Fatal("terminal ack recovery dispatched work")
+	}
+
+}
+
+func TestAssistantGraphRehearsalPublishedTaxonomy(t *testing.T) {
+	tools, err := (&assistantRunExecution{}).assistantGraphTools(nil)
+	assistantRunMust(t, err)
+	rehearsal := assistantGraphFind(t, tools.tools, "graph_rehearse")
+	if !strings.HasPrefix(rehearsal.Description, "Rehearsal, non-binding:") || rehearsal.Taxonomy == nil || rehearsal.Taxonomy.Operation != "check" || rehearsal.Taxonomy.Effect != "read" || rehearsal.Taxonomy.CheckKind != "rehearse" || rehearsal.Effect != "read" || rehearsal.Delegation != "read" {
+		t.Fatal("rehearsal lost published classification or host read boundary")
+	}
+	if problem := runcontext.HostTaxonomyProblem(rehearsal); problem != "" {
+		t.Fatal(problem)
+	}
+	for _, description := range []string{"Rehearse an existing declared graph", "Rehearsal, non-bindingish: graph"} {
+		bad := rehearsal
+		bad.Description = description
+		if runcontext.HostTaxonomyProblem(bad) == "" {
+			t.Fatal("invalid rehearsal prefix admitted")
+		}
+	}
+}
+
+// Reuse the real native Manager, callback boundary, admitted host store and
+// test-owned Runtime peer. A taxonomy-only check cannot prove this dispatch.
+func TestAssistantGraphActualNativeRehearsal(t *testing.T) {
+	s, _, e, _, trace := assistantCodexFixture(t, "read", "work")
+	inputs := `{"first":{"facts":{"null":null,"flag":false,"zero":0,"literal":"50","number":1.20},"evidence":{}}}`
+	args, err := json.Marshal(map[string]string{"id": "flow", "inputs": inputs})
+	assistantRunMust(t, err)
+	const original = "else: tool(offered('get_schema'),{})"
+	if strings.Count(assistantExecutionCodexPeer, original) != 1 {
+		t.Fatal("native fixture selection changed")
+	}
+	peer := strings.Replace(assistantExecutionCodexPeer, original, "else: tool(offered('graph_rehearse'),"+string(args)+")", 1)
+	assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(trace), "peer.py"), []byte(peer), 0600))
+	x := assistantGraphSetup(t, s, e)
+	rehearsal := assistantGraphFind(t, x.Run.HostTools, "graph_rehearse")
+	if rehearsal.Taxonomy == nil || rehearsal.Taxonomy.CheckKind != "rehearse" || rehearsal.Taxonomy.Effect != "read" || !strings.HasPrefix(rehearsal.Description, "Rehearsal, non-binding:") {
+		t.Fatal("native offer lost published rehearsal classification")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
+	record := assistantExecutionRecord(t, e)
+	if record.Checkpoint.Status != "complete" || len(record.DomainOutputs) != 0 || record.Checkpoint.Approval != nil {
+		t.Fatal("read-only rehearsal did not complete independently of approval or proposals")
+	}
+	calls := 0
+	for _, op := range record.Operations {
+		if op.Kind != "host" || op.Name != "graph_rehearse" {
+			continue
+		}
+		calls++
+		var intent assistantHostIntent
+		var result assistantHostResult
+		assistantRunMust(t, json.Unmarshal(op.Intent, &intent))
+		assistantRunMust(t, json.Unmarshal(op.Result, &result))
+		if op.State != "completed" || !intent.Root || intent.CallbackID == "" || !assistantHostArgumentsMatch(intent.Arguments, args) || !bytes.Contains(result.Result, []byte(`\"rehearsal\":true`)) || !bytes.Contains(result.Result, []byte("1.20")) {
+			t.Fatal("native rehearsal lost exact typed arguments, callback custody or recorded result")
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("native rehearsal calls = %d, want one", calls)
+	}
+	cli, err := os.ReadFile(filepath.Join(s.cfg.ProjectDir, "graph-cli.jsonl"))
+	assistantRunMust(t, err)
+	// graphPathOf resolves the saved declaration through list before evaluate.
+	// The CLI audit is JSONL: require that exact read-only sequence, rather
+	// than treating its two physical invocations as one JSON value.
+	lines := bytes.Split(bytes.TrimSpace(cli), []byte("\n"))
+	if len(lines) != 2 {
+		t.Fatalf("physical native rehearsal commands = %d, want list then evaluate", len(lines))
+	}
+	for i, line := range lines {
+		var command struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+			Input   string   `json:"input"`
+		}
+		assistantRunMust(t, json.Unmarshal(line, &command))
+		wantCommand, wantInput := "list", ""
+		wantArgs := []string{"--config", "jpack.json", "--format", "json"}
+		if i == 1 {
+			wantCommand, wantInput = "evaluate", inputs
+			wantArgs = append([]string{"flow.graph.json", "--inputs", "-", "--rehearsal"}, wantArgs...)
+		}
+		if command.Command != wantCommand || !reflect.DeepEqual(command.Args, wantArgs) || command.Input != wantInput {
+			t.Fatal("physical native rehearsal changed exact input or scope", string(cli))
+		}
+	}
+}

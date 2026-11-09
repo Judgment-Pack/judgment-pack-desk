@@ -52,7 +52,7 @@ func (s *Server) openRunReferences(create bool) (*os.Root, error) {
 	if s.root == nil || s.jobs == nil {
 		return nil, errors.New("project unavailable")
 	}
-	root, made, err := openOwnFolder(s.root, strings.Split(runReferencesDir, "/"), create, "release verification references")
+	root, made, err := openOwnFolderBy(s.root, strings.Split(runReferencesDir, "/"), create, "release verification references", s.creation(nil))
 	if err != nil {
 		return nil, err
 	}

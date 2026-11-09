@@ -17,15 +17,18 @@ type assistantPolicyProposal struct {
 	Version     int                   `json:"version"`
 	ID          string                `json:"id"`
 	PolicyID    string                `json:"policyId"`
+	CreatedAt   string                `json:"createdAt"`
+	AfterTurnID string                `json:"afterTurnId,omitempty"`
 	Revision    string                `json:"revision"`
 	Before      assistantPolicyFields `json:"before"`
 	Candidate   assistantPolicyFields `json:"candidate"`
 	OperationID string                `json:"operationId"`
-	Check       *struct {
-		Scope  string `json:"scope"`
-		Status string `json:"status"`
-	} `json:"check"`
-	Save json.RawMessage `json:"save"`
+	Check       *assistantPolicyCheck `json:"check"`
+	Save        json.RawMessage       `json:"save,omitempty"`
+}
+type assistantPolicyCheck = struct {
+	Scope  string `json:"scope"`
+	Status string `json:"status"`
 }
 
 // The dispatcher supplies the actual signed-in request. A restored checkpoint,

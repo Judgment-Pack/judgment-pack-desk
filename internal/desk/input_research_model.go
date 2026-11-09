@@ -46,16 +46,8 @@ func (s *Server) inputResearchModel(ctx context.Context, choice inputResearchAI,
 	// The feature adapter owns the research context projection and response contract.
 	// Provider transport, capacity and error normalization are shared with every
 	// background feature; authorization and request accounting stay with the worker.
-	policy, _, err := s.aiContext(choice.Model)
-	if err != nil {
-		return nil, err
-	}
-	prompt, err = fitResearchContext(prompt, policy)
-	if err != nil {
-		return nil, err
-	}
 	return s.runBackgroundModel(ctx, backgroundModelRequest{
-		Choice: choice, Owner: "input-research", Prompt: prompt,
+		Choice: choice, Owner: backgroundAttemptOwner(ctx), Prompt: prompt, StructuredResearch: true,
 		Instructions: researchModelInstructions(prompt),
 		Response: codexbridge.Tool{
 			Name:        "desk_research_action",

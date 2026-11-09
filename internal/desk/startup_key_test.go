@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -1278,7 +1279,11 @@ func TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames(t *testing.T) {
 // the upgrade that makes its key writes its identity, which every later start
 // reads. A stopped upgrade made through the link is finished at a start
 // through the trailing slash, and the key it made is the one the decision
-// record finds there, and from a relative start.
+// record finds there, and from a relative start. The installation's storage
+// was set up for the project before the upgrade wrote its identity: each of
+// these starts is the same folder, and so the same project (Desk #685).
+// Another project cannot take the name: the first-project seal refuses it at
+// startup.
 func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	t.Setenv("JPACK_CONFIG", "")
 	t.Setenv("JPACK_SIGNING_KEY", "")
@@ -1380,11 +1385,24 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	}
 	relative.Close()
 	ts.Close()
-	through, _ := start(t, link)
+	through, ts := start(t, link)
 	if got := through.signingKeyName(); got != want {
 		t.Errorf("started through the link again, the key is named %s, want %s", got, want)
 	}
-	if elsewhere, _ := start(t, other); elsewhere.signingKeyName() == want || startupNameOf(t, elsewhere) == want {
-		t.Errorf("another project's key is named %s too", want)
+	if !storageLineOn() {
+		// v0.13.2: another project starts on this installation, under its own name.
+		if elsewhere, _ := start(t, other); elsewhere.signingKeyName() == want || startupNameOf(t, elsewhere) == want {
+			t.Errorf("another project's key is named %s too", want)
+		}
+		return
+	}
+	through.Close()
+	ts.Close()
+	if elsewhere, err := New(Config{ProjectDir: other, JpackBin: rig.bin, Token: testToken, Port: 8793, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)}); err == nil {
+		named := elsewhere.signingKeyName()
+		elsewhere.Close()
+		t.Errorf("another project started on this installation, its key named %s", named)
+	} else if !errors.Is(err, errDeskAnotherStartupProject) {
+		t.Errorf("another project was refused with %v", err)
 	}
 }

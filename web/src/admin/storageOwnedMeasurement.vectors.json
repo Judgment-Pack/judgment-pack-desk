@@ -1,0 +1,97 @@
+[
+  {
+    "name": "measured-sparse-exact-decimal",
+    "facet": {
+      "measurement": {
+        "at": "2026-10-31T11:59:59Z",
+        "generation": "1",
+        "freshness": "stale",
+        "logical": {
+          "value": {
+            "bytes": "9007199254740993",
+            "files": "2",
+            "directories": "1"
+          },
+          "unknown": ""
+        },
+        "basis": "registered-metadata",
+        "allocationBasis": "reported-blocks",
+        "sharedBasis": "workspace-reference-overlap"
+      },
+      "physicalAllocated": {
+        "value": {
+          "bytes": "0",
+          "files": "2",
+          "directories": "1"
+        },
+        "unknown": ""
+      },
+      "sharedAttribution": {
+        "state": "measured",
+        "value": {
+          "bytes": "23",
+          "files": "1",
+          "directories": "0"
+        }
+      }
+    }
+  },
+  {
+    "name": "not-yet-measured",
+    "facet": {
+      "measurement": {
+        "at": null,
+        "generation": "0",
+        "freshness": "unknown",
+        "logical": {
+          "value": null,
+          "unknown": "not-measured"
+        },
+        "basis": "registered-metadata",
+        "allocationBasis": "reported-blocks",
+        "sharedBasis": "workspace-reference-overlap"
+      },
+      "physicalAllocated": {
+        "value": null,
+        "unknown": "not-measured"
+      },
+      "sharedAttribution": {
+        "state": "not-measured",
+        "value": null
+      }
+    }
+  },
+  {
+    "name": "allocation-unknown-logical-zero",
+    "facet": {
+      "measurement": {
+        "at": "2026-10-31T11:59:59Z",
+        "generation": "1",
+        "freshness": "stale",
+        "logical": {
+          "value": {
+            "bytes": "0",
+            "files": "0",
+            "directories": "0"
+          },
+          "unknown": ""
+        },
+        "basis": "registered-metadata",
+        "allocationBasis": "reported-blocks",
+        "sharedBasis": "workspace-reference-overlap"
+      },
+      "physicalAllocated": {
+        "value": null,
+        "unknown": "unavailable"
+      },
+      "sharedAttribution": {
+        "state": "measured",
+        "value": {
+          "bytes": "0",
+          "files": "0",
+          "directories": "0"
+        }
+      }
+    }
+  }
+]

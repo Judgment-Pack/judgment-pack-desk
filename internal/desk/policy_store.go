@@ -85,7 +85,7 @@ type filePolicyRepository struct {
 }
 
 func (s *Server) openPolicies(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(policyDirectory, "/"), create, "policies")
+	root, made, err := openOwnFolderBy(s.root, strings.Split(policyDirectory, "/"), create, "policies", s.creation(nil))
 	if err == nil && made {
 		if err = writePrivateData(root, ".gitignore", []byte("*\n")); err != nil {
 			root.Close()

@@ -179,7 +179,7 @@ func TestResearchJournalReviewCreationUncertaintyKeepsEvidenceDirectory(t *testi
 	run.ID = "research_" + strings.Repeat("c", 32)
 	calls := 0
 	s.researchJournals = uncertainCreateResearchJournals{repo, &calls}
-	if err := s.writeResearchReview(t.Context(), root, run, nil); err == nil || calls != 1 {
+	if err := s.writeResearchReview(t.Context(), root, run, nil, s.creation(nil)); err == nil || calls != 1 {
 		t.Fatal("retried/acknowledged uncertain create", calls, err)
 	}
 	saved, err := repo.Run(run.ID).Read(t.Context())
@@ -197,7 +197,7 @@ func TestResearchJournalReviewCreationUncertaintyKeepsEvidenceDirectory(t *testi
 	if err := writePrivateData(dir, "retained-marker", []byte("retain")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.writeResearchReview(t.Context(), root, run, nil); !errors.Is(err, os.ErrExist) || calls != 1 {
+	if err := s.writeResearchReview(t.Context(), root, run, nil, s.creation(nil)); !errors.Is(err, os.ErrExist) || calls != 1 {
 		t.Fatal("replaced uncertain run", err)
 	}
 	if data, err := readPrivateData(dir, "retained-marker", 100); err != nil || string(data) != "retain" {

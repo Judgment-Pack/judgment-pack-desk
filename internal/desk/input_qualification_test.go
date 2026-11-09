@@ -10,7 +10,7 @@ import (
 const qualificationTestPack = `{"specVersion":"0.2.0-draft","id":"https://example.invalid/pack/example","version":"1.0.0","decision":{"intent":"Check country","question":"Ready?"},"outcomes":[{"id":"ready","label":"Ready"},{"id":"other","label":"Other"}],"rules":[{"id":"country","when":{"op":"fact","path":"/company/country","operator":"equals","value":"CA"},"outcome":"ready","description":"Country matches","onUnknown":"escalate"}],"evidenceRequirements":[{"id":"license","description":"License","required":false}],"title":"Example"}`
 
 func qualificationFixture() *inputQualification {
-	return &inputQualification{Kind: "pack", Key: "example", Pack: qualificationTestPack, Digest: "sha256:" + digestOf([]byte(qualificationTestPack)), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{"/company/country", "/values/Country"}}, Evidence: []inputDialectEvidence{{"license", "/values/License"}}}, Sources: []json.RawMessage{}}}
+	return &inputQualification{Kind: "pack", Key: "example", Pack: qualificationTestPack, Digest: "sha256:" + digestOf([]byte(qualificationTestPack)), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{Target: "/company/country", Source: "/values/Country"}}, Evidence: []inputDialectEvidence{{Requirement: "license", Source: "/values/License"}}}, Sources: []json.RawMessage{}}}
 }
 func TestInputQualificationRefusesUnboundOrGeneratedMappings(t *testing.T) {
 	if e := validateInputQualification(qualificationFixture()); e != nil {

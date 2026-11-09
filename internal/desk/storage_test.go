@@ -50,6 +50,38 @@ func storageGet(t *testing.T, ts *httptest.Server) storageStatus {
 	}
 	return value
 }
+
+// storageCensusRefusalStatus requires s to have started read-only over path,
+// a link the census refuses (desk #685), and its storage status to say so in
+// words naming the path.
+func storageCensusRefusalStatus(t *testing.T, s *Server, path string) {
+	t.Helper()
+	if !s.storageReadOnly {
+		t.Fatalf("storage started writable over the link %s", path)
+	}
+	w, status := storageStatusTestRequest(t, s, "GET", "/api/storage/status", nil)
+	if w.Code != 200 || !status.ReadOnly || status.Refusal == nil || status.Refusal.Path != path ||
+		!strings.Contains(status.Refusal.Reason, path+" is a link") || !strings.Contains(status.Refusal.Reason, "read-only") {
+		t.Fatalf("the status does not name the link: %d %+v %s", w.Code, status.Refusal, w.Body.String())
+	}
+}
+
+// enrolledChatData opens chat storage the way the product's first writer
+// does: storage enrolls the default history before the store is opened.
+// openChatData alone never creates an unaccounted default location once
+// storage enrollment exists.
+func enrolledChatData(t *testing.T, s *Server) *chatDataStore {
+	t.Helper()
+	if err := s.ensureDefaultHistoryEnrollment(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	store, err := s.openChatData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
 func privateFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
@@ -62,6 +94,18 @@ func mustBytes(t *testing.T, path, want string) {
 	if err != nil || string(got) != want {
 		t.Fatalf("%s: %q %v; want %q", path, got, err, want)
 	}
+}
+
+// savedConversationBytes captures the first save as the byte-preservation baseline.
+// Request envelope order is not part of the relocation/backup contract.
+func savedConversationBytes(t *testing.T, s *Server, ts *httptest.Server) string {
+	t.Helper()
+	location := storageGet(t, ts)
+	raw, err := os.ReadFile(filepath.Join(location.Path, s.conversationName()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
 
 const storageChat = `{"version":1,"chats":[{"id":"one","composer":"private draft","attachments":[{"text":"retained source"}]}]}`
@@ -101,17 +145,22 @@ func TestStorageDefaultAndLegacy(t *testing.T) {
 	}
 }
 
+// A move takes every project's history in the data folder. One Desk runs per
+// installation, sealed to its first project, so the other project's history
+// is one an earlier Desk left there; the writer after the move is the moved
+// Desk's own, and a restart of it.
 func TestStorageMoveAllProjectsAndFreshWriters(t *testing.T) {
 	config := t.TempDir()
 	a, ats, _ := assistantServerIn(t, config)
-	b, bts, _ := assistantServerIn(t, config)
-	for _, ts := range []*httptest.Server{ats, bts} {
-		if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
-			t.Fatal(code)
-		}
+	if code, _ := chatRequest(t, ats, "PUT", "absent", storageChat, true, ""); code != 200 {
+		t.Fatal(code)
 	}
-	privateFixture(t, filepath.Join(config, "secrets", "unrelated"), "protected credential")
+	storageChat := savedConversationBytes(t, a, ats)
 	before := storageGet(t, ats)
+	sibling := "conversations-" + digestOf([]byte("an earlier project of this installation")) + ".json"
+	privateFixture(t, filepath.Join(before.Path, sibling), storageChat)
+	privateFixture(t, filepath.Join(config, "secrets", "unrelated"), "protected credential")
+	before = storageGet(t, ats)
 	if before.ProjectCount != 2 || before.ProjectBytes != int64(len(storageChat)) {
 		t.Fatalf("%+v", before)
 	}
@@ -123,28 +172,33 @@ func TestStorageMoveAllProjectsAndFreshWriters(t *testing.T) {
 	if after.Path != target || after.PreviousPath != before.Path || after.Revision == before.Revision {
 		t.Fatalf("%+v", after)
 	}
-	for _, s := range []*Server{a, b} {
-		mustBytes(t, filepath.Join(target, s.conversationName()), storageChat)
-		mustBytes(t, filepath.Join(before.Path, s.conversationName()), storageChat)
+	for _, name := range []string{a.conversationName(), sibling} {
+		mustBytes(t, filepath.Join(target, name), storageChat)
+		mustBytes(t, filepath.Join(before.Path, name), storageChat)
 	}
 	mustBytes(t, filepath.Join(config, "secrets", "unrelated"), "protected credential")
 	if _, err := os.Stat(filepath.Join(target, "secrets")); !os.IsNotExist(err) {
 		t.Fatal("credentials moved")
 	}
 	next := `{"version":1,"chats":[{"id":"two"}]}`
-	if code, _ := chatRequest(t, bts, "PUT", digestOf([]byte(storageChat)), next, true, ""); code != 200 {
-		t.Fatal("other server did not follow move", code)
+	if code, _ := chatRequest(t, ats, "PUT", digestOf([]byte(storageChat)), next, true, ""); code != 200 {
+		t.Fatal("the writer did not follow the move", code)
 	}
-	mustBytes(t, filepath.Join(target, b.conversationName()), next)
-	mustBytes(t, filepath.Join(before.Path, b.conversationName()), storageChat)
-	if code, _ := chatRequest(t, bts, "PUT", digestOf([]byte(storageChat)), storageChat, true, ""); code != 409 {
+	next = savedConversationBytes(t, a, ats)
+	mustBytes(t, filepath.Join(target, a.conversationName()), next)
+	mustBytes(t, filepath.Join(before.Path, a.conversationName()), storageChat)
+	if code, _ := chatRequest(t, ats, "PUT", digestOf([]byte(storageChat)), storageChat, true, ""); code != 409 {
 		t.Fatal("stale write accepted", code)
 	}
-	restarted, rts := startDesk(t, b.cfg)
+	cfg := a.cfg
+	cfg.Root = nil
+	storageTestMust(t, a.Close())
+	ats.Close()
+	restarted, rts := startDesk(t, cfg)
 	defer restarted.Close()
 	defer rts.Close()
 	if code, reply := chatRequest(t, rts, "GET", "", "", true, ""); code != 200 || string(reply.Content) != next {
-		t.Fatal("restart lost history", code)
+		t.Fatalf("restart lost history: %d (read-only %v: %v)", code, restarted.storageReadOnly, restarted.storageProblem)
 	}
 }
 
@@ -155,6 +209,7 @@ func TestStorageMoveRefusalsPreserveOriginal(t *testing.T) {
 			if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 				t.Fatal(code)
 			}
+			storageChat := savedConversationBytes(t, s, ts)
 			before := storageGet(t, ts)
 			request := moveChatData{Path: filepath.Join(t.TempDir(), "target"), Revision: before.Revision}
 			switch kind {
@@ -216,7 +271,16 @@ func TestStorageMoveRefusalsPreserveOriginal(t *testing.T) {
 				t.Fatalf("%s accepted: %s", kind, body)
 			}
 			mustBytes(t, filepath.Join(before.Path, s.conversationName()), storageChat)
-			if kind != "pointer-change" && kind != "other-writer" {
+			if kind == "path-substitution" && storageLineOn() {
+				// With the storage line on, the substituted destination is found
+				// after the move published its pointer: the refused move leaves
+				// storage recovery required, and the settings read says so in
+				// words rather than failing. With it off, v0.13.2's pointer check
+				// below applies.
+				if code, _, body := storageRequest(t, ts, "/api/storage", nil); code != 503 || !strings.Contains(body, "storage recovery is required") {
+					t.Fatal("settings after a substituted destination", code, body)
+				}
+			} else if kind != "pointer-change" && kind != "other-writer" {
 				if status := storageGet(t, ts); status.Path != before.Path {
 					t.Fatal("failure changed pointer", status.Path)
 				}
@@ -290,6 +354,7 @@ func TestStorageCanceledAndInterruptedCopy(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
 			chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
+			storageChat := savedConversationBytes(t, s, ts)
 			before := storageGet(t, ts)
 			target := filepath.Join(t.TempDir(), "target")
 			ctx, cancel := context.WithCancel(context.Background())
@@ -413,6 +478,7 @@ func TestStorageBlocksRelocationDuringRelayRequests(t *testing.T) {
 			if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 				t.Fatal("running relay blocked checkpoint persistence", code)
 			}
+			storageChat := savedConversationBytes(t, s, ts)
 			close(release)
 			released = true
 			select {

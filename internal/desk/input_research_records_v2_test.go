@@ -311,7 +311,7 @@ func TestResearchV2SelectionCollectsOnlyAssociatedEvidenceAcrossRuns(t *testing.
 	if !researchUnchangedContent(run, unchanged, contextRows[1].Entity) {
 		t.Fatal("rebinding source references invalidated an unchanged record")
 	}
-	if err = s.writeResearchReview(t.Context(), root, run, nil); err != nil {
+	if err = s.writeResearchReview(t.Context(), root, run, nil, s.creation(nil)); err != nil {
 		t.Fatal(err)
 	}
 	child, _ := openInputResearch(root, run.ID, false)

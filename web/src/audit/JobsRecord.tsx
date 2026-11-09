@@ -70,8 +70,9 @@ const UNLISTED = 'Signed under a key the list does not name.'
 const verifyCommand = (publicKey: string) =>
   `jpack-runner verify-run --file <Desk's copy of the run's export> --profiles <this desk's input profiles> --release-digest <the export's own releaseDigest> --public-key ${publicKey} --require-signed`
 
-/** The ADR's sentence (section 4, "A Jobs record panel"), without "the keys and": Desk passes no key here. */
-const STATEMENT = "Desk ran this over its own copy of the runner's chain of runs, with the checkpoints it keeps. It shows what a holder would see. It is not evidence to anyone who does not trust this installation."
+/** Describe only the checkpoint files actually passed to the runtime. Chain verification receives no public key. */
+const NO_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner's chain of runs. It passed no checkpoints or public keys. It shows what a holder would see with the same inputs. These inputs and results describe this installation only."
+const WITH_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner's chain of runs. It passed checkpoint files ({{number}} in total) and no public keys. It shows what a holder would see with the same inputs. These inputs and results describe this installation only."
 
 /** The panel's one check: disabled, so that only the owner's request, or a confirmed hand-over of the chain, runs it. */
 export function useJobsRecord() {
@@ -143,7 +144,9 @@ function Answer({ record }: { record: JobsAnswer }) {
       {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
     </>
     case 'report': return <>
-      <p className={styles.statement}>{msg(STATEMENT)}</p>
+      <p className={styles.statement}>{(record.expected ?? 0) > 0
+        ? msg(WITH_CHECKPOINTS, { number: record.expected })
+        : msg(NO_CHECKPOINTS)}</p>
       {record.handoverProblem && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
       {record.expectUnread && <SettingsFeedback tone="error">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</SettingsFeedback>}
       <Report report={record.report} />

@@ -36,7 +36,7 @@ func catalogSourceMembers(raw json.RawMessage, version int, provider bool) bool 
 	if provider {
 		keys = []string{"id", "shape", "record"}
 	}
-	if version == 4 {
+	if version >= 4 {
 		keys = append(keys, "capabilities")
 		var members map[string]json.RawMessage
 		if json.Unmarshal(raw, &members) != nil {
@@ -49,6 +49,9 @@ func catalogSourceMembers(raw json.RawMessage, version int, provider bool) bool 
 			}
 			keys = append(keys, "adapter")
 		}
+	}
+	if version == 5 {
+		keys = append(keys, "taxonomy", "profile", "capabilityTaxonomies", "dispatchTaxonomies")
 	}
 	_, ok := catalogMembers(raw, keys...)
 	return ok

@@ -452,8 +452,29 @@ func TestPortableResearchSwitchToPlanBeforeWebDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if held.State != "blocked" || len(held.Attempts) != 1 || calls.Load() != 1 || !strings.Contains(held.Problem, "Switch to Work") {
+	// Work is rechecked after the provider response, before its wire receipt is
+	// retained. The in-flight model request is uncertain; its page action cannot
+	// become an accepted acquisition or authorize a replay.
+	if held.State != "interrupted" || len(held.Attempts) != 1 || calls.Load() != 1 || len(held.Portable.Response) != 0 {
 		t.Fatalf("Plan dispatched: state=%s problem=%s attempts=%d", held.State, held.Problem, len(held.Attempts))
+	}
+	attempt := held.Attempts[0]
+	if attempt.Kind != "model" || attempt.State != "uncertain" || attempt.Failure == nil || attempt.Failure.Code != "unknown" || attempt.Failure.Source != "model" || attempt.Failure.Outcome != "unknown" || attempt.ProblemCode != "unknown" || attempt.Recovery != "review" {
+		t.Fatalf("Plan lost canonical failure: %+v", attempt)
+	}
+	receipt := attempt.Background
+	if receipt == nil || !receipt.Dispatched || len(receipt.Wire) != 0 || len(receipt.Response) != 0 || len(attempt.Result) != 0 || attempt.RetainedProof != nil {
+		t.Fatalf("Plan accepted stale action or receipt: %+v", attempt)
+	}
+	if _, err := queuePortableResearch(t.Context(), store.journal, run.Revision); err == nil {
+		t.Fatal("Plan allowed uncertain request to queue again")
+	}
+	after, err := store.read()
+	if err != nil || after.State != "interrupted" || len(after.Attempts) != 1 || calls.Load() != 1 || len(after.Portable.Response) != 0 {
+		t.Fatalf("Plan resume changed run: %+v %v", after, err)
+	}
+	if err := s.portableResearchChatWork(run.Portable.Frozen.ChatID); err == nil || !strings.Contains(err.Error(), "Switch to Work") {
+		t.Fatal("Plan Work gate no longer refuses", err)
 	}
 }
 func TestPortableResearchJournalEscapingRoundTrip(t *testing.T) {

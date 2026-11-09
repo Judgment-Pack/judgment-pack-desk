@@ -58,7 +58,7 @@ func TestInputConversionsPreserveUnknownAndExplicitValues(t *testing.T) {
 }
 func TestPreparedInputsKeepOriginalsAndPerTargetConversion(t *testing.T) {
 	q := qualificationFixture()
-	q.Mapping.Case.Facts = []inputDialectFact{{"/company/country", "/values/Count"}, {"/count", "/values/Count"}, {"/blank", "/values/Blank"}}
+	q.Mapping.Case.Facts = []inputDialectFact{{Target: "/company/country", Source: "/values/Count"}, {Target: "/count", Source: "/values/Count"}, {Target: "/blank", Source: "/values/Blank"}}
 	q.Conversions = map[string]inputConversion{"/count": {Kind: "number"}}
 	r := preparedInputRecord{ID: "row", Class: "asserted", SourceID: "source", Values: map[string]string{"Count": "123", "Blank": "", "License": "present"}}
 	doc := inputPreparation{ID: "prep", Recipe: inputRecipe{Qualification: q}, RecipeVersion: 2, Records: []preparedInputRecord{r}, Imports: []inputImport{{ID: "source", RecipeVersion: 1}}}
@@ -148,7 +148,7 @@ func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool, backen
 		return w.Code, w.Body.Bytes()
 	}
 	var saved inputPreparationReply
-	q := &inputQualification{Kind: "pack", Key: "screening", Pack: string(pack), Digest: sha256Digest(pack), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{"/screening/matches", "/values/Matches"}}, Evidence: []inputDialectEvidence{{"screening-record", "/values/Evidence"}}}, Sources: []json.RawMessage{}}, Conversions: map[string]inputConversion{"/screening/matches": {Kind: "number"}}}
+	q := &inputQualification{Kind: "pack", Key: "screening", Pack: string(pack), Digest: sha256Digest(pack), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{Target: "/screening/matches", Source: "/values/Matches"}}, Evidence: []inputDialectEvidence{{Requirement: "screening-record", Source: "/values/Evidence"}}}, Sources: []json.RawMessage{}}, Conversions: map[string]inputConversion{"/screening/matches": {Kind: "number"}}}
 	code, raw := call("POST", "/api/input-preparations", map[string]any{"name": "Screening inputs", "recipe": inputRecipe{Qualification: q}}, "")
 	if code != 201 {
 		t.Fatal(code, string(raw))
