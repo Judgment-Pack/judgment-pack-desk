@@ -72,8 +72,10 @@ run_shard() {
   local k=$1 n=$2 list="$out/go-test-desk.list" log="$out/go-test-desk.log" pattern code
   local minutes=${GO_TEST_SHARD_MINUTES:-30}
   [[ "$minutes" =~ ^[1-9][0-9]*$ ]] || { echo "go-test.sh: GO_TEST_SHARD_MINUTES is a whole number" >&2; return 2; }
-  if ! go test -list '.*' "$package" > "$list" 2>&1 < /dev/null; then
-    cat "$list"
+  # Only the listing goes in the list: with a cold module cache, `go` reports its downloads on
+  # stderr, and those lines are not tests.
+  if ! go test -list '.*' "$package" > "$list" 2> "$list.err" < /dev/null; then
+    cat "$list.err" "$list"
     echo "go-test: $package did not list its tests"
     return 2
   fi
