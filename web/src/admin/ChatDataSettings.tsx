@@ -1,4 +1,3 @@
-import {privateQuery} from '../data/privateQuery'
 import {LoadingState} from '../ui/LoadingState'
 import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
@@ -25,7 +24,7 @@ import { ProjectHistorySettings } from './ProjectHistorySettings'
 export function ChatDataSettings() {
   useLocale()
   const queryClient = useQueryClient()
-  const query = useQuery({ ...privateQuery, queryKey, queryFn: ({ signal }) => deskFetch('/api/storage', { signal }).then(answer<ChatStorageStatus>), retry: false })
+  const query = useQuery({ queryKey, staleTime: Infinity, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false, refetchInterval: false, queryFn: ({ signal }) => deskFetch('/api/storage', { signal }).then(answer<ChatStorageStatus>), retry: false })
   const { store, saving, dirty, error: chatError } = useChats()
   const [edit, setEdit] = useState<ChatStorageStatus | null>(null)
   const [path, setPath] = useState('')

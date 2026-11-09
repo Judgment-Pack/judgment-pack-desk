@@ -114,6 +114,12 @@ var researchAnswerHeaders = map[string]bool{
 // `configuredEndpoint` applies, and for the same reason: a file the page
 // visibly rejected authorises no request.
 func (s *Server) configuredResearch() (researchGateway, error) {
+	return s.configuredResearchCurrent(true)
+}
+
+// Storage admission inspects current local process facts without starting or
+// waiting for a companion while the private-data lock is held.
+func (s *Server) configuredResearchCurrent(startLocal bool) (researchGateway, error) {
 	var zero researchGateway
 	if !s.assistant.usable() {
 		return zero, withCode(CodeAssistantUnusableStore, s.assistant.problem)
@@ -125,7 +131,7 @@ func (s *Server) configuredResearch() (researchGateway, error) {
 			"no research gateway could be read: %s could not be read: %v", path, err))
 	}
 	if !present && s.localGateway != nil {
-		return s.localResearch(nil)
+		return s.localResearchCurrent(nil, startLocal)
 	}
 	if !present {
 		return zero, withCode(CodeResearchUnconfigured, fmt.Errorf(
@@ -142,7 +148,7 @@ func (s *Server) configuredResearch() (researchGateway, error) {
 			path, describeProblems(decoded.Problems)))
 	}
 	if decoded.Research == nil {
-		return s.localResearch(nil)
+		return s.localResearchCurrent(nil, startLocal)
 	}
 	if decoded.Research.gateway == nil {
 		documents := decoded.Research.documents
@@ -157,7 +163,7 @@ func (s *Server) configuredResearch() (researchGateway, error) {
 				documents = &documentSourceConfig{}
 			}
 		}
-		return s.localResearch(documents)
+		return s.localResearchCurrent(documents, startLocal)
 	}
 	gateway := *decoded.Research.gateway
 	gateway.maxRequestBytes = maxResearchBody

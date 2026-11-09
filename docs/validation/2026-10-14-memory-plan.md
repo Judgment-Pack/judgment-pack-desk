@@ -12,7 +12,7 @@
 
 - Broad frontend suite: **89 files, 1,613 tests passed**, three optional fixtures skipped. Includes adapter conformance, shared chat/research, context architecture and memory/Plan regressions.
 - Full `internal/desk` and `internal/aicontext` Go checks passed. Final targeted memory, Plan and research-approval tests passed after the final changes. Memory-only project moves, backup restore, source staleness, credentials, CAS, symlinks, deletion protection and pending-versus-active recall are covered.
-- Browser journey uses the real Gemini adapter with a local scripted provider: create a plan in main chat; reload it as the linked Dialects pane chat; explicitly Start work; include approved memory in the request; persist acceptance and refresh without replay. No browser errors and no paid calls. Screenshots: `/tmp/jps-plan-main.png`, `/tmp/jps-plan-pane.png`.
+- Browser journey uses the real Gemini adapter with a local scripted provider: create a plan in main chat; reload it as the linked Dialects pane chat; explicitly Start work; include approved memory in the request; persist acceptance and refresh without replay. No browser errors and no paid calls. Screenshots: `<scratch>/jps-plan-main.png`, `<scratch>/jps-plan-pane.png`.
 - TypeScript, localization validation and production frontend build passed. Existing untranslated catalog fallbacks remain; new untranslated messages also fall back to English. The existing bundle-size advisory remains.
 - Local screenshot inspection through the image tool was unavailable because its filesystem sandbox failed. Browser layout bounds, semantics and navigation were checked programmatically.
 

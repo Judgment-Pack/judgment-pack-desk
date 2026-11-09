@@ -17,6 +17,7 @@ import (
 var researchChatID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,160}$`)
 
 type inputResearchApproval struct {
+	RequestKey   string           `json:"requestKey,omitempty"`
 	ChatID       string           `json:"chatId"`
 	Name         string           `json:"name"`
 	SessionScope string           `json:"sessionScope"`
@@ -52,6 +53,9 @@ func validateResearchApproval(run inputResearchRun) error {
 	start, e := time.Parse(time.RFC3339Nano, a.ApprovedAt)
 	end, e2 := time.Parse(time.RFC3339Nano, a.ExpiresAt)
 	if e != nil || e2 != nil || !end.After(start) || end.Sub(start) > time.Hour || !researchChatID.MatchString(a.ChatID) || len(a.SessionScope) != 64 || run.ContinuationOf != "" {
+		return bad
+	}
+	if a.RequestKey != "" && (!assistantRunDigest(a.RequestKey) || a.UsedAt == "") {
 		return bad
 	}
 	if (a.UsedAt == "") != (a.TurnID == "") || a.UsedAt != "" && a.RevokedAt != "" {
@@ -142,6 +146,10 @@ func (s *Server) validateResearchAdmission(r *http.Request, run inputResearchRun
 		return "", err
 	}
 	defer p.Close()
+	return s.validateResearchAdmissionView(r, run, p)
+}
+
+func (s *Server) validateResearchAdmissionView(r *http.Request, run inputResearchRun, p inputPreparationReader) (string, error) {
 	saved, err := p.Get(run.PreparationID)
 	if err != nil {
 		return "", err
@@ -284,10 +292,17 @@ func (s *Server) handleResearchApprovals(w http.ResponseWriter, r *http.Request)
 	}
 
 	if r.Method != "GET" && !isRevoke {
-		if err := s.checkChatExecution(chat); err != nil {
+		receipt, err := s.requestResearch(r, inputResearchRequest{ChatID: chat, PreparationID: request.PreparationID, Revision: request.Revision, TurnID: request.TurnID}, nil)
+		if err != nil {
 			fail(err)
 			return
 		}
+		if receipt.Status == "started" {
+			writeJSON(w, 200, map[string]any{"status": receipt.Status, "runId": receipt.RunID, "state": receipt.State})
+		} else {
+			writeJSON(w, 200, map[string]string{"status": "review-required"})
+		}
+		return
 	}
 
 	root, err := s.inputResearchRoot(false)
@@ -372,57 +387,6 @@ func (s *Server) handleResearchApprovals(w http.ResponseWriter, r *http.Request)
 		fail(errors.New("This research allowance is unavailable in this session."))
 		return
 	}
-	// A repeated delivery from the same turn returns the original run, including
-	// when the first response was lost. It cannot create another paid operation.
-	for _, grant := range grants {
-		if grant.PreparationID == request.PreparationID && grant.Revision == request.Revision && grant.Approval.UsedAt != "" && grant.Approval.TurnID == request.TurnID {
-			writeJSON(w, 200, map[string]any{"status": "started", "runId": grant.ID, "state": grant.State})
-			return
-		}
-	}
-	for _, grant := range grants {
-		if researchApprovalState(grant, time.Now()) != "ready" || grant.PreparationID != request.PreparationID || grant.Revision != request.Revision {
-			continue
-		}
-		if err = s.researchInputAvailable(r.Context(), root, grant.PreparationID, grant.ID); err != nil {
-			fail(err)
-			return
-		}
-		if err = s.researchBudgetIsLatest(r.Context(), root, grant); err != nil {
-			fail(err)
-			return
-		}
-		rr, err := openInputResearch(root, grant.ID, false)
-		if err != nil {
-			fail(err)
-			return
-		}
-		defer rr.Close()
-		updated, err := s.researchJournal(rr, grant.ID).Update(r.Context(), func(current *inputResearchRun) error {
-			if current.State != "review" || researchApprovalState(*current, time.Now()) != "ready" {
-				return errors.New("This research allowance is no longer available.")
-			}
-			if _, err := s.validateResearchAdmission(r, *current); err != nil {
-				return err
-			}
-			// Validation can take time; expiry is checked again at the durable commit.
-			now := time.Now().UTC()
-			if researchApprovalState(*current, now) != "ready" {
-				return errors.New("The research allowance expired. Review a new allowance.")
-			}
-			current.Approval.UsedAt = now.Format(time.RFC3339Nano)
-			current.Approval.TurnID = request.TurnID
-			current.State = "queued"
-			return nil
-		})
-		if err != nil {
-			fail(err)
-			return
-		}
-		writeJSON(w, 200, map[string]any{"status": "started", "runId": updated.ID, "state": updated.State})
-		return
-	}
-	writeJSON(w, 200, map[string]string{"status": "review-required"})
 }
 
 func researchApprovalEvidence(run inputResearchRun) *inputResearchApprovalView {

@@ -48,7 +48,10 @@ func (s *Server) researchInputAvailable(ctx context.Context, root *os.Root, prep
 
 var researchProofID = regexp.MustCompile(`^attempt_[a-f0-9]{64}(_[1-4])?$`)
 
-func (s *Server) writeResearchReview(ctx context.Context, root *os.Root, run inputResearchRun, parent *os.Root) error {
+// writeResearchReview stages and publishes a new run in root, the research
+// folder. The caller holds the research admission on root; admitted is how
+// folders are made in root under it (researchCreation).
+func (s *Server) writeResearchReview(ctx context.Context, root *os.Root, run inputResearchRun, parent *os.Root, admitted folderCreation) error {
 	if err := validateResearchJournal(run, run.ID); err != nil {
 		return err
 	}
@@ -63,7 +66,7 @@ func (s *Server) writeResearchReview(ctx context.Context, root *os.Root, run inp
 			return err
 		}
 	}
-	rr, _, err := openOwnFolder(root, []string{staging}, true, "research review")
+	rr, _, err := openOwnFolderBy(root, []string{staging}, true, "research review", admitted)
 	if err != nil {
 		return err
 	}

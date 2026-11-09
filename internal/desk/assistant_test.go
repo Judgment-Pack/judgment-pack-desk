@@ -45,9 +45,17 @@ func assistantServer(t *testing.T) (*Server, *httptest.Server, *bytes.Buffer) {
 // store validates and pins it.
 func assistantServerIn(t *testing.T, config string) (*Server, *httptest.Server, *bytes.Buffer) {
 	t.Helper()
+	return assistantServerAt(t, t.TempDir(), config)
+}
+
+// assistantServerAt is assistantServerIn on a given project. One Desk runs
+// per installation: a test that starts a second Desk on config closes the
+// first one before it does.
+func assistantServerAt(t *testing.T, project, config string) (*Server, *httptest.Server, *bytes.Buffer) {
+	t.Helper()
 	logged := &bytes.Buffer{}
 	s, ts := startDesk(t, Config{
-		ProjectDir: t.TempDir(),
+		ProjectDir: project,
 		// A stand-in by absolute path: creating a desk runs the runtime.
 		JpackBin:      standInRuntime(t),
 		Token:         testToken,
@@ -1267,7 +1275,8 @@ func TestDeskConfigWriteRefusesASymlinkedFile(t *testing.T) {
 	// credential is presented to, so a name reached through a symlink is not
 	// read — and therefore not written either. A write that treated the read's
 	// refusal as absence would replace an out-pointing link with a regular
-	// file.
+	// file. Storage's census refuses the link too (desk #685): the Desk
+	// starts read-only, its status names the link, and the write is refused.
 	config := t.TempDir()
 	elsewhere := filepath.Join(t.TempDir(), "somewhere.json")
 	if err := os.WriteFile(elsewhere, []byte(`{"deskConfigVersion":1}`), 0o600); err != nil {
@@ -1276,9 +1285,15 @@ func TestDeskConfigWriteRefusesASymlinkedFile(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(config, deskConfigName)); err != nil {
 		t.Skipf("symlinks are not available here: %v", err)
 	}
-	_, ts, _ := assistantServerIn(t, config)
-	status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`)))
-	if status != http.StatusBadRequest || body["code"] != CodeNotAFile {
+	s, ts, _ := assistantServerIn(t, config)
+	if storageLineOn() {
+		storageCensusRefusalStatus(t, s, filepath.Join(config, deskConfigName))
+		status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`)))
+		if status != http.StatusServiceUnavailable {
+			t.Fatalf("status %d, body %v; want the read-only refusal", status, body)
+		}
+	} else if status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`))); status != http.StatusBadRequest || body["code"] != CodeNotAFile {
+		// With the storage line off, as in v0.13.2: the write is refused as not a file.
 		t.Fatalf("status %d, body %v; want 400 %s", status, body, CodeNotAFile)
 	}
 	// The file the link points at is untouched.
@@ -1676,9 +1691,14 @@ func TestABindingSurvivesARestart(t *testing.T) {
 	s, ts, _ := assistantServerIn(t, config)
 	storeKeyBoundTo(t, s, ts, "gemini", "https://first.example.invalid/")
 
-	// A second desk over the same directory: a restart, in the only form a
-	// test can take it.
-	next, nextTS, _ := assistantServerIn(t, config)
+	// The same project and directory started again once the first desk has
+	// closed: a restart, in the only form a test can take it. One Desk runs
+	// per installation, so the two are never open at once.
+	ts.Close()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next, nextTS, _ := assistantServerAt(t, s.cfg.ProjectDir, config)
 	stored, err := next.assistant.readKey()
 	if err != nil {
 		t.Fatalf("read after restart: %v", err)
@@ -1985,6 +2005,17 @@ func probeAgainstRaw(t *testing.T, kind, endpoint string) (int, string) {
 			`"model":"a-model","tools":[]}}}`, endpoint, kind))
 	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
 		t.Fatalf("store: %d %v", status, body)
+	}
+	if kind == "anthropic" {
+		// Generated reachability uses the real durable Settings owner. Metadata
+		// protocols continue to exercise their existing model-free probe route.
+		f := &settingsObservationFixture{s: s, token: policyTestSession(t, s), legacy: true}
+		start := f.reference(t, "reachability-fixture", "ping")
+		run := f.run(t, start)
+		result := f.result(t, run)
+		encoded, err := json.Marshal(result.Ping)
+		assistantRunMust(t, err)
+		return http.StatusOK, string(encoded)
 	}
 	return rawBody(t, ts, http.MethodPost, "/api/assistant/probe", nil)
 }

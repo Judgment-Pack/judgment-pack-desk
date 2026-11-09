@@ -219,7 +219,13 @@ compute, or replay a provider request. Other 429s, server/transport failures and
 errors from other endpoints retain the existing refusal handling. Capacity wait
 metadata clears after admission, ordinary errors, pause or supersession. Receipt
 recovery, trigger pause checks and current record eligibility remain available
-during the wait; pausing never submits the pending envelope.
+during the wait; pausing never submits the pending envelope. Each successful
+admission or receipt establishing a previously unknown admission clears the
+ordinary consecutive-refusal count and retry time as well as the capacity wait
+before processing another delivery.
+Polling an already-known occurrence preserves a later delivery's retry state.
+Explicit Resume of a confirmed blocked subscription clears both retry states
+without changing retained event identities, timestamps or input bytes.
 
 Review creation writes a hidden staging journal before directory publication. An
 uncertain create retains staging, and a repeat cannot replace it. Recovery tools

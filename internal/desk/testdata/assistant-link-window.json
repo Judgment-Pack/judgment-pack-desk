@@ -1,0 +1,12 @@
+[
+ {"name":"explicit surrogate midpoint","pages":["😀 alpha"],"offset":1,"expectedOffset":0,"expectedPages":[1]},
+ {"name":"implicit find midpoint","pages":["😀"],"padding":198,"suffix":" needle","find":"needle","expectedOffset":0,"expectedPages":[1]},
+ {"name":"combining mark stays a code unit","pages":["café 😀 tail"],"offset":4,"expectedOffset":4,"expectedPages":[1]},
+ {"name":"selected second page boundary","pages":["😀 one","two 😀"],"offset":8,"expectedOffset":8,"expectedPages":[2]},
+ {"name":"BMP explicit offset","pages":["alpha beta"],"offset":3,"expectedOffset":3,"expectedPages":[1]},
+ {"name":"case fold and ECMAScript whitespace","pages":["K k K S s ſ alpha beta alpha﻿beta alpha\nbeta"],"find":"alpha beta","expectedOffset":0,"expectedPages":[1],"expectedMatches":[{"start":12,"end":22},{"start":23,"end":33},{"start":34,"end":44}]},
+ {"name":"astral cutoff continuation","pages":["😀"],"repeat":8000,"expectedOffset":0,"expectedPages":[1],"continuation":true},
+ {"name":"Kelvin does not fold to ASCII","pages":["K k K S s ſ"],"find":"k","expectedOffset":0,"expectedPages":[1],"expectedMatches":[{"start":0,"end":1},{"start":2,"end":3}]},
+ {"name":"long s does not fold to ASCII","pages":["K k K S s ſ"],"find":"s","expectedOffset":0,"expectedPages":[1],"expectedMatches":[{"start":6,"end":7},{"start":8,"end":9}]},
+ {"name":"metadata also fits the result bound","pages":["x"],"pageCount":500,"expectedRefusal":true}
+]

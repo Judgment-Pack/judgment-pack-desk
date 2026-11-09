@@ -1,3 +1,4 @@
+import { CONTEXT_DEFAULTS } from '@judgment-pack/harness/context/policy'
 import { SettingsFeedback } from '../ui/SettingsFeedback'
 import { sourceMessage } from '../i18n/source'
 import { Menu as DropdownMenu } from '../ui/Menu'
@@ -63,6 +64,7 @@ export function AIConnectionsSettings({unavailable,onDirtyChange}:{unavailable:b
   save.mutate({base:snapshot,connections:[...snapshot.connections,c],defaultConnection:snapshot.defaultConnection||id},{onSuccess:()=>setSelected(id)})
  }
  return <div className={styles.stack}>
+  <p>{msg('Policy table review fallback: {{mode}}',{mode:CONTEXT_DEFAULTS.criticDefault})}</p>
   <div className={styles.toolbar}><span className="quiet">{msg('Saved AI connections')} · {registry.connections.length}</span><Button disabled={busy||registry.connections.length>=32} onClick={()=>{setName('');setSnapshot(registry);save.reset();setAdding(true)}}>{msg('Add connection')}</Button></div>
   {!registry.connections.length&&<p className="quiet">{msg('Add a ChatGPT account or an API connection. You can keep several providers connected.')}</p>}
   <div className={styles.list}>{registry.connections.map(c=><div className={styles.row} key={c.id}>

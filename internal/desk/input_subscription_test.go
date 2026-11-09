@@ -111,7 +111,7 @@ func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string, 
 		}
 	}
 
-	q := &inputQualification{Kind: "pack", Key: "screening", Pack: string(pack), Digest: sha256Digest(pack), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{"/screening/matches", "/values/Matches"}}, Evidence: []inputDialectEvidence{{"screening-record", "/values/Evidence"}}}, Sources: []json.RawMessage{}}, Conversions: map[string]inputConversion{"/screening/matches": {Kind: "decimal"}}}
+	q := &inputQualification{Kind: "pack", Key: "screening", Pack: string(pack), Digest: sha256Digest(pack), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{Target: "/screening/matches", Source: "/values/Matches"}}, Evidence: []inputDialectEvidence{{Requirement: "screening-record", Source: "/values/Evidence"}}}, Sources: []json.RawMessage{}}, Conversions: map[string]inputConversion{"/screening/matches": {Kind: "decimal"}}}
 	var saved inputPreparationReply
 	json.Unmarshal(call("/api/input-preparations", map[string]any{"name": "Incremental", "recipe": inputRecipe{Qualification: q}}, ""), &saved)
 	path := "/api/input-preparations/" + saved.Document.ID

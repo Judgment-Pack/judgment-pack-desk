@@ -1,0 +1,66 @@
+[
+  {
+    "language": "go",
+    "name": "assistant link: supplied user role guard omitted",
+    "file": "internal/desk/assistant_link_read.go",
+    "needle": "if turn.Role != \"user\" {",
+    "replacement": "if false && turn.Role != \"user\" {",
+    "witness": "TestAssistantLinkSavedNominationOnly"
+  },
+  {
+    "language": "go",
+    "name": "assistant link: ordinary saved-turn limit omitted",
+    "file": "internal/desk/assistant_link_store.go",
+    "needle": "if attempts >= 3 {",
+    "replacement": "if false && attempts >= 3 {",
+    "witness": "TestAssistantLinkFreshAdmissionBudget"
+  },
+  {
+    "language": "go",
+    "name": "assistant link: retained document limit omitted",
+    "file": "internal/desk/assistant_link_store.go",
+    "needle": "if len(retained) >= 256 {",
+    "replacement": "if false && len(retained) >= 256 {",
+    "witness": "TestAssistantLinkRetainedLimit"
+  },
+  {
+    "language": "go",
+    "name": "assistant link: pending crash intent ignored",
+    "file": "internal/desk/assistant_link_store.go",
+    "needle": "search.DispatchClosed || assistantLinkPending(search)",
+    "replacement": "search.DispatchClosed",
+    "witness": "TestAssistantLinkUnknownExternalOutcome"
+  },
+  {
+    "language": "go",
+    "name": "assistant link: original storage identity omitted",
+    "file": "internal/desk/assistant_link_read.go",
+    "needle": " || held.Original.Receipt.ID != held.FinalID",
+    "replacement": "",
+    "witness": "TestAssistantLinkExactProofAssociation"
+  },
+  {
+    "language": "go",
+    "name": "assistant link: queued verified authority bytes omitted",
+    "file": "internal/desk/assistant_link_tools.go",
+    "needle": "if held.AuthorityPacket != nil {\n\t\traw, err := e.assistantLinkPacket(ctx, held.AuthorityPacket.ID)",
+    "replacement": "if false && held.AuthorityPacket != nil {\n\t\traw, err := e.assistantLinkPacket(ctx, held.AuthorityPacket.ID)",
+    "witness": "TestAssistantLinkQueuedVerifiedSearchAuthority"
+  },
+  {
+    "language": "go",
+    "name": "assistant link: Unicode safe start omitted",
+    "file": "internal/desk/assistant_link_window.go",
+    "needle": "start = assistantLinkSafeStart(joined, min(chars, start))",
+    "replacement": "start = min(chars, start)",
+    "witness": "TestAssistantLinkSharedWindowVectors"
+  },
+  {
+    "language": "web",
+    "name": "assistant link: browser Unicode safe start omitted",
+    "file": "web/src/chat/linkTools.ts",
+    "needle": "if (start > 0 &&",
+    "replacement": "if (false && start > 0 &&",
+    "witness": "shared private/browser link window vectors"
+  }
+]

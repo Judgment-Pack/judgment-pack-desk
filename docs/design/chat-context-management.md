@@ -6,7 +6,7 @@ Implemented 2026-10-14. This is Desk infrastructure for existing and future AI f
 
 | Execution path | Context boundary |
 | --- | --- |
-| Main chat and page assistant; Dialect design/mapping; pack/test design and diagnosis | Shared hooks → certified adapter → `managedContext` |
+| Main chat and page assistant; Dialect design/mapping; pack/test design and diagnosis | Server-owned run (`/api/assistant-runs`) → canonical Go adapter with the server-owned `ChatContext` (`Chat: chatScope()`) |
 | Briefs, graphs and Jobs design using the assistant hook | Same boundary; no feature-specific size guard |
 | API authoring, repairs and independent review | Vercel `prepareStep` budgets every request and projects tool output |
 | Subscription Codex authoring and review | Desk budgets initial instructions/prompt/schemas and callback results; Codex owns its opaque internal conversation compaction |
@@ -15,6 +15,32 @@ Implemented 2026-10-14. This is Desk infrastructure for existing and future AI f
 | Future AI features | `AGENTS.md` requires these boundaries; architecture coverage tests constrain SDK imports and registered dispatch sites |
 
 The JSON defaults in `internal/aicontext/policy.json` are consumed by both TypeScript and Go. `jpack-assistant.json` can override declared model budgets. The defaults are a conservative application policy, not a claim about a provider's actual context window. Bytes/3 is explicitly an estimate; provider tokenization and usage remain authoritative. A 180,000-byte transport ceiling applies even to larger declared windows. Output reserves, instructions, tool schemas, optional project background and framing are included. The initial prompt uses at most 60% of the remaining message allowance, leaving room for tool steps.
+
+## Adapter prompt ownership candidate (#546)
+
+The canonical Go adapter receives raw project brief, explicit-query memory and
+project instructions through its Host, and owns their framing, ordering and
+prompt provenance. The API relay and legacy native transport do not infer a
+recall query or append brief/memory text. `ai_wire_guard.go` retains the legacy
+transport's model-specific byte/output refusal without clipping or reserializing
+accepted input. Canonical dispatch retains the adapter's admitted context policy;
+the relay still applies its existing body, credential, target and capacity fences.
+
+`ai_context.go` retains only the fresh explicit brief resolver used by existing
+background/research source-currentness checks. Those reads validate retained
+source custody; they do not assemble another prompt behind the relay. The
+obsolete request-body recall-rule helpers, tests and historical recall fixture
+fetch/diff obligation are removed. Current host-parts/state-placement/approval
+vectors and provider certification gates remain in place.
+
+Focused fixtures execute the actual canonical adapter and Desk relay/native
+bridge on OpenAI-compatible, Anthropic, Gemini and native wires. Each prompt part
+is requested once with the adapter's exact query; removing the configured brief
+after the Host read cannot cause a second relay read. API dispatch receipts and
+upstream bytes must match exactly, with one copy of each ordered prompt layer.
+This source candidate does not activate a global cutover or remove browser
+engines; coordinated migration and current-wiring certification remain release
+requirements.
 
 ## Retention, projection and recovery
 
@@ -32,13 +58,14 @@ The immediate regression was a 138-turn chat with approximately 35,000 visible c
 
 | Data | Storage and lifetime |
 | --- | --- |
-| Active browser model context and exact retrieval ledger | Browser memory for the execution; cleared on completion, cancellation or failure |
+| Chat-scoped context (ledger and immutable read cache) | Server memory, one `ChatContext` per saved chat or authoring pane (`internal/desk/assistant_chat_contexts.go`); never written to disk; disposed when its owner ends (see [Server-owned chat contexts](#server-owned-chat-contexts)) |
+| Exact retrieval ledger of one execution | Scoped to that execution inside its chat context; not reused by another execution or child task |
 | Chat history, full work events and linked proposals | Existing project-scoped Desk conversation/artifact stores under the Desk private directory; unchanged by compaction |
 | Background research sources and operation history | Existing run journals in Desk private storage; request projections are transient and rebuilt from those journals |
 | Optional project guidance | Explicit relative file named by `context.projectBrief` in the project’s `jpack-assistant.json`; read freshly by the server |
 | Context policy defaults | Shared application configuration in `internal/aicontext/policy.json` |
 
-For the current local GTM Desk, durable Desk-owned data is under `/home/onword/.local/share/jpack-desk/gtm-desk/.desk-private/`. The private data location is installation/project scoped, not a public project memory folder. No new permanent summary directory is created. A browser refresh loses active in-memory execution; existing saved history is used for an explicit new turn/retry, without automatically replaying work.
+For the current local GTM Desk, durable Desk-owned data is under `$HOME/.local/share/jpack-desk/gtm-desk/.desk-private/`. The private data location is installation/project scoped, not a public project memory folder. No new permanent summary directory is created. Runs are server-owned, so a browser refresh does not end them. A reloaded page registers a fresh context document, so the next turn starts a fresh chat context; saved history is used for an explicit new turn/retry, without automatically replaying work.
 
 ## Optional project context
 
@@ -81,7 +108,7 @@ Plan mode now uses this same context boundary and persists proposed, revised and
 
 ## Boundaries and future extensions
 
-Execution context uses deterministic excerpts and exact retrieval. [Project memory](project-memory.md) now adds opt-in, reviewed preferences across chats through this same boundary. It does not introduce background transcript mining, a vector store, automatic project-brief writes, or a separate assistant. It does not convert browser-owned chat execution into a durable background service. Those are separate product changes, not prerequisites for the current execution coverage.
+Execution context uses deterministic excerpts and exact retrieval. [Project memory](project-memory.md) now adds opt-in, reviewed preferences across chats through this same boundary. It does not introduce background transcript mining, a vector store, automatic project-brief writes, or a separate assistant. Chat execution is server-owned ([ADR-0014](../adr/0014-server-owned-assistant-runs.md)); its chat context lives in server memory and is not a durable background store. Those are separate product changes, not prerequisites for the current execution coverage.
 
 Codex's internal token-by-token steps are not visible to Desk; its native context manager owns those. Desk enforces the boundaries it controls rather than claiming to tokenize that hidden conversation. Context estimates are not billing measurements. Full source records and independent test expectations remain authoritative; summaries cannot alter either.
 
@@ -186,10 +213,33 @@ Runner proxy. This boundary alone does not implement portable research review or
 execution.
 
 
-The standalone authoring pane owns an in-memory `ChatContext` for its mounted
-`useAssistantRun` hook. It passes that context, the connected Runtime identity
-(where a release version is known), and the current project memory setting on
-each run. Retained Runtime reads are keyed by Runtime identity; builds without a
-release identity keep reads scoped to the run. The hook disposes its context on
-unmount, and a newly mounted pane starts with a fresh context. It does not borrow
-a saved conversation's context.
+## Server-owned chat contexts
+
+The server, not a browser hook, owns each chat-scoped `ChatContext`
+([Desk #678](https://github.com/Judgment-Pack/judgment-pack-desk/issues/678)).
+`internal/desk/assistant_chat_contexts.go` keeps one context per saved chat and
+one per mounted authoring pane, inside a context document that a page registers
+through `POST /api/assistant-contexts/documents` (panes through
+`/api/assistant-contexts/panes`). A run start names its document, and its pane
+for an authoring purpose; the browser never sends the context itself. Admission
+binds the run to that context, and every execution of the run hands the same
+context to the Agent as `runcontext.Input{Chat: source.chatScope()}`, so a second
+turn of a chat reuses the first turn's ledger and read cache.
+
+Each document belongs to one authority: principal, session, policy and
+project. Another chat, pane, project or session cannot reach it. The host binds
+the actual Runtime identity (from `describe_runtime`, when a release version is
+known) and the current project memory setting on each execution. Retained
+Runtime reads are keyed by that identity; builds without a release identity keep
+reads scoped to the run.
+
+A context is disposed when its owner ends: the saved chat is deleted, the pane
+unmounts or the page leaves (the browser releases its registration on
+`pagehide`), its session ends (for example at sign-out) or the sign-in policy
+changes, or Desk shuts down. A run still holding the context keeps it until
+that run settles. An invocation whose end cannot be proven leaves its context blocked
+rather than disposed, so no later run silently gets a replacement. Counts are
+bounded (documents, panes, contexts and registrations); the context contents keep
+the Agent package's own budgets. A standalone pane never borrows a saved
+conversation's context. The browser `chatContextFor` helper
+(`web/src/assistant/chatContexts.ts`) no longer feeds any run.

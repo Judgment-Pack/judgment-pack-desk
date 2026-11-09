@@ -1,0 +1,8 @@
+{
+  "attachmentVersion":"1",
+  "document":{"id":"sha256:52c3935626c104b2cbc9031291a1c4d56614c38f52072a361d658a58a9c48698","name":"report.txt","mediaType":"text/plain","detectedMediaType":"text/plain","size":14,"version":null,"encryption":null},
+  "original":{"retention":"caller","encoding":null,"bytes":null},
+  "content":{"kind":"text","extraction":"verbatim","pageCount":2,"truncated":false,"chars":40,"pages":[{"number":1,"status":"ok","extraction":"verbatim","text":"Selected first page.","chars":20,"unmapped":0},{"number":2,"status":"ok","extraction":"verbatim","text":"Private second page.","chars":20,"unmapped":0}]},
+  "processing":{"status":"complete","errors":[],"bounds":{"maxBytes":16777216,"maxPages":500,"maxTextBytes":8388608,"maxInflateBytes":16777216,"maxOcrOutputBytes":8388608,"timeoutMs":60000},"durationMs":1},
+  "provenance":{"adapter":{"name":"adapter-document","version":"1","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"source":{"kind":"inline"},"observedAt":"2026-10-20T00:00:00Z","processor":"adapter-document/text/1","ocr":null}
+}

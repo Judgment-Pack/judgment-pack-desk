@@ -432,9 +432,10 @@ func (s policyExecutionService) retainedAdoption(ctx context.Context, l policyLe
 func (s policyExecutionService) prepareIntent(ctx context.Context, resource policyExecutionResource, registration policyExecutionRegistration, key string, raw []byte) (policyExecutionIntent, string, error) {
 	var result policyExecutionIntent
 	delivery := ""
-	if !resource.valid() || !registration.valid() || !executionKey(key) || len(raw) == 0 || len(raw) > 2<<20 || !utf8.Valid(raw) || !json.Valid(raw) || jsonscalar.ValidateEscapes(raw) != nil || rejectDuplicateMembers(raw) != nil {
+	if !resource.valid() || !registration.valid() || !executionKey(key) || len(raw) == 0 || len(raw) > 2<<20 || !utf8.Valid(raw) || !json.Valid(raw) || jsonscalar.ValidateEscapes(raw) != nil || checkJSONMembers(raw, opaqueJSONMembers) != nil {
 		return result, delivery, executionFailure("invalid-request")
 	}
+	// The exact envelope whitelist below owns controls; its payloads are opaque.
 	var body map[string]json.RawMessage
 	if json.Unmarshal(raw, &body) != nil || body == nil || body["facts"] == nil {
 		return result, delivery, executionFailure("invalid-request")

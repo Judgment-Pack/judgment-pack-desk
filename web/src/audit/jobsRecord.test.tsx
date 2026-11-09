@@ -28,7 +28,8 @@ import { JobsRecord } from './JobsRecord'
 
 vi.mock(import('../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
 
-const STATEMENT = "Desk ran this over its own copy of the runner's chain of runs, with the checkpoints it keeps. It shows what a holder would see. It is not evidence to anyone who does not trust this installation."
+const WITH_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner's chain of runs. It passed checkpoint files (1 in total) and no public keys. It shows what a holder would see with the same inputs. These inputs and results describe this installation only."
+const NO_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner's chain of runs. It passed no checkpoints or public keys. It shows what a holder would see with the same inputs. These inputs and results describe this installation only."
 const SIGNATURES = "The chain of runs carries no signature sidecar of its own. Where Runner has a key, it signs each run's record in that run's own attempt, and a run it signed carries the signature in its version-5 export."
 const trail = '9a5ef41d74e7d7e003c8a34cff056351'
 const chainId = 'abe5e3a494c36af588768ce5b0305497'
@@ -143,7 +144,7 @@ describe('the Jobs record', () => {
     expect(count('/api/audit/jobs-verify')).toBe(0)
     expect(count('/api/runner-key')).toBe(1)
     await check()
-    expect(await screen.findByText(STATEMENT)).toBeTruthy()
+    expect(await screen.findByText(WITH_CHECKPOINTS)).toBeTruthy()
     expect(count('/api/audit/jobs-verify')).toBe(1)
     await act(async () => { await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000) })
     // Neither the project's own invalidation nor a blanket one runs it again.
@@ -159,7 +160,7 @@ describe('the Jobs record', () => {
     await check()
     const shown = await panel()
     expect((await shown.findByText('The trail failed a check the runtime made.')).getAttribute('data-status')).toBe('invalid')
-    expect(shown.getByText(STATEMENT)).toBeTruthy()
+    expect(shown.getByText(WITH_CHECKPOINTS)).toBeTruthy()
     const facts = within(shown.getByLabelText('Coverage'))
     expect(facts.getByText('Witnessed through record 2')).toBeTruthy()
     const term = (name: string) => facts.getByText(name).nextElementSibling?.textContent
@@ -203,10 +204,9 @@ describe('the Jobs record', () => {
     show()
     await check()
     const region = await screen.findByRole('region', { name: 'Jobs record' })
-    await within(region).findByText(STATEMENT)
+    await within(region).findByText(WITH_CHECKPOINTS)
     const own = region.cloneNode(true) as HTMLElement
     for (const element of own.querySelectorAll('[aria-label="Coverage"], [aria-label="What this establishes"], [aria-label="What this does not establish"], [aria-label="Findings"]')) element.remove()
-    for (const element of own.querySelectorAll('p')) if (element.textContent === STATEMENT) element.remove()
     expect(own.textContent).not.toMatch(/verified|witnessed|proof|evidence/i)
   })
 
@@ -218,7 +218,7 @@ describe('the Jobs record', () => {
       await check()
       const shown = await panel()
       expect(await shown.findByText(words)).toBeTruthy()
-      expect(shown.queryByText(STATEMENT)).toBeNull()
+      expect(shown.queryByText(WITH_CHECKPOINTS)).toBeNull()
       expect(shown.queryByRole('region', { name: 'Signatures' })).toBeNull()
       cleanup()
     }
@@ -230,7 +230,7 @@ describe('the Jobs record', () => {
     await check()
     const shown = await panel()
     expect(await shown.findByText('This runtime (jpack 0.25.0) writes an unchained trail and has no audit commands. Chaining, checkpoints, signing and stamping need jpack 0.26.0 or later.')).toBeTruthy()
-    expect(shown.queryByText(STATEMENT)).toBeNull()
+    expect(shown.queryByText(WITH_CHECKPOINTS)).toBeNull()
     expect(shown.queryByLabelText('Coverage')).toBeNull()
   })
 
@@ -247,10 +247,33 @@ describe('the Jobs record', () => {
   })
 
   it('names the holders whose checkpoints of the chain it could not read', async () => {
-    jobs = () => json(200, report({ expectUnread: ['Auditor', 'Regulator'] }))
+    jobs = () => json(200, report({ expected: 0, expectUnread: ['Auditor', 'Regulator'] }))
     show()
     await check()
-    expect((await (await panel()).findByText('Desk could not read the checkpoints it keeps as handed over to Auditor, Regulator, so the check ran without them.')).getAttribute('role')).toBe('alert')
+    const shown = await panel()
+    expect(await shown.findByText(NO_CHECKPOINTS)).toBeTruthy()
+    expect(shown.queryByText(WITH_CHECKPOINTS)).toBeNull()
+    expect(shown.getByText('Desk could not read the checkpoints it keeps as handed over to Auditor, Regulator, so the check ran without them.').getAttribute('role')).toBe('alert')
+  })
+
+  it('says no checkpoint was passed when there is no holder, or the hand-over record failed', async () => {
+    for (const handoverProblem of [undefined, 'Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check.']) {
+      jobs = () => json(200, report({ expected: handoverProblem ? 0 : undefined, handoverProblem }))
+      show()
+      await check()
+      const shown = await panel()
+      expect(await shown.findByText(NO_CHECKPOINTS)).toBeTruthy()
+      expect(shown.queryByText(WITH_CHECKPOINTS)).toBeNull()
+      if (handoverProblem) expect(shown.getByText(handoverProblem).getAttribute('role')).toBe('alert')
+      cleanup()
+    }
+  })
+
+  it('states the count actually passed when other holders’ checkpoints were unread', async () => {
+    jobs = () => json(200, report({ expected: 2, expectUnread: ['Regulator'] }))
+    show()
+    await check()
+    expect(await (await panel()).findByText(WITH_CHECKPOINTS.replace('1 in total', '2 in total'))).toBeTruthy()
   })
 
   it('says a refusal that is not JSON as one, and Desk’s refusal in its words', async () => {
@@ -275,13 +298,13 @@ describe('the Jobs record', () => {
     show()
     await check()
     const shown = await panel()
-    expect(await shown.findByText(STATEMENT)).toBeTruthy()
+    expect(await shown.findByText(WITH_CHECKPOINTS)).toBeTruthy()
     const said = 'Desk could not take a copy of the runner\'s chain of runs, and nothing was checked: the runner\'s answer did not complete.'
     jobs = () => json(502, { error: said, code: 'bad-request' })
     await check()
     expect((await shown.findByRole('alert')).textContent).toBe(said)
     expect(count('/api/audit/jobs-verify')).toBe(2)
-    expect(shown.queryByText(STATEMENT)).toBeNull()
+    expect(shown.queryByText(WITH_CHECKPOINTS)).toBeNull()
     expect(shown.queryByLabelText('Coverage')).toBeNull()
     expect(shown.queryByRole('region', { name: 'Signatures' })).toBeNull()
   })

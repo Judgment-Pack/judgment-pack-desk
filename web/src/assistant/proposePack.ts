@@ -20,6 +20,7 @@ import { PROPOSE_PACK_SCHEMA, PROPOSE_PACK_TOOL } from '@judgment-pack/harness/e
 export function proposePackTool(): HostTool {
   return {
     name: PROPOSE_PACK_TOOL,
+    taxonomy: {operation: 'propose', effect: 'propose'},
     effect: 'proposal',
     description:
       'Deliver the pack proposal for the person to review: the proposed pack as a JSON object, and what the policy leaves open. Nothing is written or saved; the person reviews the proposal.',

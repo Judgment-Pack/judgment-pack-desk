@@ -255,7 +255,8 @@ func TestInputPreparationConcurrentChatSaves(t *testing.T) {
 		t.Run(fmt.Sprint("different-settings=", changed), func(t *testing.T) {
 			s, _ := newTestServer(t, false)
 			repo := s.preparationRepository()
-			arrived := make(chan struct{}, 2)
+			// Room for the retries below, which arrive after release.
+			arrived := make(chan struct{}, 4)
 			proceed := make(chan struct{})
 			release := sync.OnceFunc(func() { close(proceed) })
 			defer release()
@@ -264,33 +265,50 @@ func TestInputPreparationConcurrentChatSaves(t *testing.T) {
 				<-proceed
 				return repo.CompareAndSwap(ctx, doc, revision)
 			}}
-			results := make(chan *httptest.ResponseRecorder, 2)
+			send := func(i int) *httptest.ResponseRecorder {
+				name := "Collection"
+				if changed && i == 1 {
+					name = "Different collection"
+				}
+				body := fmt.Sprintf(`{"name":%q,"recipe":{"intent":"Prepare records"},"chatOrigin":{"chatId":"chat-1","draftId":"draft-1"}}`, name)
+				r := httptest.NewRequest("POST", "/api/input-preparations", strings.NewReader(body))
+				r.Header.Set("Authorization", "Bearer "+testToken)
+				w := httptest.NewRecorder()
+				s.ServeHTTP(w, r)
+				return w
+			}
+			// Two first saves can both make the preparations' folder. The one
+			// that finds the other making it is refused, worded and
+			// retryable (409), and retried once, as a client does.
+			busy := func(w *httptest.ResponseRecorder) bool {
+				return w.Code == 409 && strings.Contains(w.Body.String(), "Storage is busy with another request")
+			}
+			type answer struct {
+				i int
+				w *httptest.ResponseRecorder
+			}
+			results := make(chan answer, 2)
 			for i := 0; i < 2; i++ {
-				go func(i int) {
-					name := "Collection"
-					if changed && i == 1 {
-						name = "Different collection"
-					}
-					body := fmt.Sprintf(`{"name":%q,"recipe":{"intent":"Prepare records"},"chatOrigin":{"chatId":"chat-1","draftId":"draft-1"}}`, name)
-					r := httptest.NewRequest("POST", "/api/input-preparations", strings.NewReader(body))
-					r.Header.Set("Authorization", "Bearer "+testToken)
-					w := httptest.NewRecorder()
-					s.ServeHTTP(w, r)
-					results <- w
-				}(i)
+				go func(i int) { results <- answer{i, send(i)} }(i)
 			}
 			// Both requests have observed absence before either can commit.
 			for range 2 {
 				select {
 				case <-arrived:
-				case w := <-results:
-					t.Fatal("request completed before commit", w.Code, w.Body.String())
+				case got := <-results:
+					t.Fatal("request completed before commit", got.w.Code, got.w.Body.String())
 				case <-time.After(5 * time.Second):
 					t.Fatal("request did not reach commit")
 				}
 			}
 			release()
-			a, b := <-results, <-results
+			first, second := <-results, <-results
+			for _, got := range []*answer{&first, &second} {
+				if busy(got.w) {
+					got.w = send(got.i)
+				}
+			}
+			a, b := first.w, second.w
 			other := 200
 			if changed {
 				other = 409

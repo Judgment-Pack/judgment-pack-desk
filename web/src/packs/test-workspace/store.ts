@@ -4,15 +4,8 @@ import { useFileListing } from '../../files/queries'
 import { answer, deskFetch } from '../../files/client'
 import { decodeStore, emptySuite, type TestStore, type TestSuite } from './model'
 export const TESTS_KEY = ['pack-test-workspace'] as const
-interface Reply {
-  project: string
-  sha256: string
-  content: TestStore
-}
-export async function readTests(signal?: AbortSignal): Promise<Reply> {
-  const r = await answer<Reply>(await deskFetch('/api/pack-tests', {signal}))
-  return { ...r, content: decodeStore(r.content) }
-}
+import { readTests, type Reply } from './client'
+export { readTests } from './client'
 export async function updateTests(
   owner: string,
   change: (suite: TestSuite, document: TestStore) => TestSuite | Promise<TestSuite>,

@@ -265,9 +265,21 @@ it('keeps review separate from publication and binds each to the exact saved can
  expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(true)
 })
 it('protects failed saves through shared exit confirmation and displays immutable actor and revision history',async()=>{
- const app=mount({mutate:async()=>{throw new Error('Fixture network failure')}})
+ let rejectSave!:(reason:Error)=>void
+ const saving=new Promise<PolicyMutationReply>((_resolve,reject)=>{rejectSave=reject})
+ const app=mount({mutate:()=>saving})
  await screen.findByRole('textbox',{name:'Policy text'});edit('Still unsaved');clickSave()
- await screen.findByRole('button',{name:'Check operation result'})
+ await screen.findByRole('button',{name:'Working…'})
+ await act(()=>app.router.navigate('/library'))
+ expect(app.router.state.location.pathname).toBe('/policies/policy-one')
+ expect(screen.queryByRole('dialog',{name:'Unsaved changes'})).toBeNull()
+ expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('Still unsaved')
+ await act(async()=>{rejectSave(new Error('Fixture network failure'))})
+ await waitFor(()=>{
+  expect(screen.getByRole('button',{name:'Check operation result'})).toHaveProperty('disabled',false)
+  expect(screen.queryByRole('button',{name:'Working…'})).toBeNull()
+  expect([...app.router.state.blockers.values()].every(blocker=>blocker.state==='unblocked')).toBe(true)
+ })
  const closing=new Event('beforeunload',{cancelable:true});window.dispatchEvent(closing);expect(closing.defaultPrevented).toBe(true)
  await act(()=>app.router.navigate('/library'))
  expect(await screen.findByRole('dialog',{name:'Unsaved changes'})).toBeTruthy()

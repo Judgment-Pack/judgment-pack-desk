@@ -53,7 +53,7 @@ func validHomeFolder(name string) bool {
 	return name != "" && name != "." && !strings.HasPrefix(name, ".") && !strings.EqualFold(name, deskHomePlatform) && filepath.IsLocal(name) && filepath.Base(name) == name && !strings.ContainsAny(name, `\/:*?"<>|`) && !strings.ContainsFunc(name, unicode.IsControl) && len(name) <= 120 && !strings.HasSuffix(name, ".") && !strings.HasSuffix(name, " ")
 }
 func validateHomeRegistry(value deskHomeRegistry) error {
-	if value.Version != 1 || !startupIDForm.MatchString(value.Owner) || len(value.Desks) == 0 || len(value.Desks) > maxDesks+1 {
+	if (value.Version != 1 && value.Version != 2) || !startupIDForm.MatchString(value.Owner) || len(value.Desks) == 0 || len(value.Desks) > maxDesks+1 {
 		return errors.New("Desk home registry is invalid.")
 	}
 	ids, folders := map[string]bool{}, map[string]bool{}
@@ -90,10 +90,7 @@ func readDeskHome(config string) (*deskHome, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Desk home registry could not be read: %w", err)
 	}
-	var value deskHomeRegistry
-	if err = decodeDataJSON(raw, &value); err == nil {
-		err = validateHomeRegistry(value)
-	}
+	value, err := decodeHomeRegistry(raw)
 	if err != nil {
 		return nil, err
 	}

@@ -424,10 +424,10 @@ func TestAnAcceptedFileDoesReachTheTransport(t *testing.T) {
 		}
 		// Only the fixtures that actually configure an endpoint can probe; the
 		// rest are accepted files with nothing to reach.
-		if decodeDeskFile(data).Endpoint == nil {
+		endpoint := decodeDeskFile(data).Endpoint
+		if endpoint == nil {
 			continue
 		}
-		tried++
 		s, ts, _ := assistantServer(t)
 		writeDeskConfig(t, s, string(data))
 		// Stored against the fixture's own endpoint, so the key is bound to
@@ -435,6 +435,20 @@ func TestAnAcceptedFileDoesReachTheTransport(t *testing.T) {
 		if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
 			t.Fatalf("%s: store", name)
 		}
+		// An Anthropic connection is checked by a saved Settings observation,
+		// not by this probe: it is refused in words, and reaches nothing.
+		if endpoint.kind == "anthropic" {
+			before, _ := counter.seen()
+			status, body := postJSON(t, ts, "/api/assistant/probe")
+			if status != http.StatusConflict || body["error"] != "Use a saved Settings observation to check this connection." {
+				t.Fatalf("%s: status %d, body %v", name, status, body)
+			}
+			if after, to := counter.seen(); after != before {
+				t.Fatalf("%s: the refused probe made %d request(s) (%v)", name, after-before, to)
+			}
+			continue
+		}
+		tried++
 		if status, body := postJSON(t, ts, "/api/assistant/probe"); status != http.StatusOK {
 			t.Fatalf("%s: status %d, body %v", name, status, body)
 		}

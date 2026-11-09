@@ -75,9 +75,19 @@ func RunInputSourceAdapter(input io.Reader, output io.Writer) error {
 		return err
 	}
 	defer root.Close()
+	selected, err := retainedInputGrantSelection(root, request.Arguments.Grant)
+	if err != nil {
+		return errors.New("Reviewed-input grant is unavailable.")
+	}
+	if selected {
+		return runRetainedInputSourceAdapter(root, request.Arguments.Grant, request.Arguments.Digest, output)
+	}
 	raw, err = readPrivateData(root, request.Arguments.Grant+".json", inputHandoffLimit)
 	var grant inputHandoff
 	if err != nil || decodeDataJSON(raw, &grant) != nil {
+		return errors.New("Reviewed-input grant is unavailable.")
+	}
+	if selected, err := retainedInputGrantSelection(root, request.Arguments.Grant); err != nil || selected {
 		return errors.New("Reviewed-input grant is unavailable.")
 	}
 	until, err := time.Parse(time.RFC3339Nano, grant.Expires)
@@ -132,23 +142,17 @@ func readyInputReview(doc inputPreparation, record preparedInputRecord) error {
 	return errors.New("The saved input review is unavailable. Review the record again.")
 }
 func (s *Server) reviewedInputSnapshot(ctx context.Context, doc inputPreparation, record preparedInputRecord, row inputPreparedRow) (json.RawMessage, error) {
-	if err := readyInputReview(doc, record); err != nil {
-		return nil, err
-	}
-	root, err := s.inputResearchRoot(false)
+	retained, err := s.openReviewedInputRun(ctx, doc, record)
 	if err != nil {
 		return nil, err
 	}
-	defer root.Close()
-	dir, err := openInputResearch(root, record.Research.RunID, false)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	run, err := s.researchJournal(dir, record.Research.RunID).Read(ctx)
-	if err != nil {
-		return nil, err
-	}
+	defer retained.close()
+	return s.reviewedInputSnapshotFromRun(ctx, doc, record, row, retained.run, retained.dir)
+}
+
+// The ordinary v1 producer and the private retained producer share these exact
+// review, model, source and snapshot checks over one already-read journal run.
+func (s *Server) reviewedInputSnapshotFromRun(ctx context.Context, doc inputPreparation, record preparedInputRecord, row inputPreparedRow, run inputResearchRun, dir *os.Root) (json.RawMessage, error) {
 	if run.PreparationID != doc.ID || run.RecipeVersion != record.Research.RecipeVersion || !contains([]string{"completed", "completed-with-gaps", "partial", "stopped", "interrupted", "blocked"}, run.State) {
 		return nil, errors.New("Research changed or is still running. Review its saved records before evaluation.")
 	}
@@ -272,6 +276,9 @@ func (s *Server) prepareReviewedInputs(ctx context.Context, doc inputPreparation
 	return s.prepareReviewedInputsWithRelease(ctx, doc, rows, nil)
 }
 func (s *Server) prepareReviewedInputsForRelease(ctx context.Context, doc inputPreparation, rows []inputPreparedRow, raw json.RawMessage) error {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return err
+	}
 	var release reviewedInputRelease
 	if json.Unmarshal(raw, &release) != nil || len(release.InputMapping) == 0 || doc.Recipe.Qualification == nil || release.Pack != doc.Recipe.Qualification.Pack {
 		return errors.New("The subscription's reviewed release is unavailable.")
@@ -295,6 +302,9 @@ func (s *Server) prepareReviewedInputsForRelease(ctx context.Context, doc inputP
 	return nil
 }
 func (s *Server) prepareReviewedInputsWithRelease(ctx context.Context, doc inputPreparation, rows []inputPreparedRow, release *reviewedInputRelease) error {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return err
+	}
 	if len(rows) == 0 {
 		return nil
 	}
@@ -377,7 +387,7 @@ func (s *Server) prepareReviewedInputsWithRelease(ctx context.Context, doc input
 	admitsFacts, admitsEvidence := map[string][]string{}, map[string][]string{}
 	if q.Mapping.Case != nil {
 		for _, f := range q.Mapping.Case.Facts {
-			facts = append(facts, inputDialectFact{f.Target, "/prepared/" + inputEscape(f.Target)})
+			facts = append(facts, inputDialectFact{Target: f.Target, Source: "/prepared/" + inputEscape(f.Target)})
 			admitsFacts[f.Target] = []string{"generated"}
 		}
 		for _, f := range q.Mapping.Case.Evidence {
@@ -433,7 +443,7 @@ func (s *Server) prepareReviewedInputsWithRelease(ctx context.Context, doc input
 	if err != nil {
 		return err
 	}
-	root, err := openPrivateDataRoot(s.inputHandoffPath(), true)
+	root, err := openPrivateDataRootBy(s.inputHandoffPath(), true, s.creation(nil))
 	if err != nil {
 		return err
 	}

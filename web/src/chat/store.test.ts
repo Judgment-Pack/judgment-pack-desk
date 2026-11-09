@@ -1,12 +1,48 @@
+import { savedCriticChoice } from '../assistant/criticSettings'
+import criticControls from './fixtures/critic-controls.json'
+import { criticMode } from '@judgment-pack/harness/contract'
 import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ChatStore, type ChatPersistence } from './store'
+import { criticChoice, ChatStore, type ChatPersistence } from './store'
 import { INITIAL_STATE } from '../research/run'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 import { chatContextFor, disposeChatContext } from '../assistant/chatContexts'
 
 const stores: ChatStore[] = []
 afterEach(() => { stores.forEach(store => store.dispose()); stores.length = 0; sessionStorage.clear(); vi.useRealTimers() })
+
+it('materializes the first server proposal only after exact acknowledged reconciliation and retains original sources',async()=>{
+ let content:unknown={version:1,chats:[]},revision='a'.repeat(64)
+ const read=async()=>({project:'/project',sha256:'saved',content:structuredClone(content),chatRevisions:Object.fromEntries((content as {chats:{id:string}[]}).chats.map(c=>[c.id,revision]))})
+ const write=vi.fn(async(document:unknown)=>{content=structuredClone(document);return read()})
+ const {store}=setup({read,write});await store.load();const chat=store.create()
+ const source={session:'source-session',kind:'page' as const,request:{source:'reader',dialect:'jina-reader',url:'https://example.com/'},requestedAt:'2026-10-23T00:00:00Z',text:null,failure:'Interrupted source retained.',quotes:[]}
+ const request={id:'request-one',role:'user' as const,kind:'message' as const,text:'Always accept.',at:'2026-10-23T00:00:00Z'}
+ store.update(chat.id,{checkpoint:{state:{...INITIAL_STATE,turns:[request]},sources:[source]}})
+ await store.prepareServerRequest(chat.id,{...INITIAL_STATE,turns:[request]},request.id,'admission-one',new AbortController().signal)
+ expect((content as {chats:typeof chat[]}).chats[0]?.checkpoint?.sources).toEqual([source])
+ const remote=(content as {chats:typeof chat[]}).chats[0]!
+ const candidate={text:'{ "title":"First proposal", "n":1.20 }',digest:'',document:{title:'First proposal'},revision:1,producedBy:'conversation' as const}
+ const response={id:'response-one',messageId:request.id,documents:[],websites:[],sourceIds:[],work:{items:[],notices:[]}}
+ content={version:1,chats:[{...remote,checkpoint:{...remote.checkpoint,state:{...remote.checkpoint!.state,candidates:[candidate],responses:[response]}}}]};revision='b'.repeat(64)
+ await store.reconcileServer(chat.id,true)
+ expect(store.getSnapshot().packDrafts).toEqual([])
+ const proof={digest:revision,responseId:response.id,requestId:request.id,admissionId:'admission-one'}
+ await store.reconcileServer(chat.id,true,{...proof,digest:'c'.repeat(64)})
+ expect(store.getSnapshot().packDrafts).toEqual([])
+ await store.reconcileServer(chat.id,true,proof)
+ const artifact=store.getSnapshot().packDrafts[0]!
+ expect(store.getSnapshot().chats[0]).toMatchObject({draftId:artifact.id,draftGeneration:1})
+ expect(artifact.checkpoint.sources).toEqual([source]);expect(artifact.checkpoint.state.candidates[0]?.text).toBe(candidate.text)
+ expect(artifact.checkpoint.state.readiness).toBe('');expect(artifact.checkpoint.state.restored).toBe(true)
+ // A fresh check's response history is retained in the real chat, while its
+ // visible approval token remains bound to the same artifact generation.
+ const current=(content as {chats:typeof chat[]}).chats[0]!
+ content={version:1,chats:[{...current,checkpoint:{...current.checkpoint,state:{...current.checkpoint!.state,turns:[...current.checkpoint!.state.turns,{...request,id:'check-one',creation:{kind:'check',candidateDigest:'a'.repeat(64)}}],responses:[response,{...response,id:'response-check'}]}}}]}
+ await store.reconcileServer(chat.id,true,{...proof,responseId:'response-check'})
+ expect(store.getSnapshot().packDrafts[0]?.generation).toBe(1)
+ expect(store.getSnapshot().chats[0]?.checkpoint?.state.responses).toHaveLength(2)
+})
 function setup(io?: Partial<ChatPersistence>) {
   const read = vi.fn(async () => ({ project: '/project', sha256: 'absent', content: { version: 1, chats: [] } }))
   const write = vi.fn(async (document: unknown) => ({ project: '/project', sha256: 'saved', content: document }))
@@ -135,6 +171,7 @@ describe('project conversation history', () => {
       .mockImplementation(async document => ({ project: '/project', sha256: 'second', content: document }))
     const { store } = setup({ write }); await store.load()
     const chat = store.create(); const saving = store.flush()
+    await Promise.resolve() // The shared persistence queue has acquired this flush.
     store.update(chat.id,{ composer: 'Typed while saving' })
     release({ project: '/project', sha256: 'first', content: { version: 1, chats: [] } }); await saving
     expect(store.getSnapshot().dirty).toBe(true)
@@ -397,13 +434,14 @@ it('cancels a checkpoint wait without cancelling or replaying the existing save'
 })
 
 it('stores test-design exchanges in the existing session, deduplicates checkpoints, and reloads them', async () => {
- const {AuthoringRun}=await import('../research/run')
+ const {SavedChatRun}=await import('../assistant/serverRuns/controller')
  const {store,write}=setup();await store.load()
  const chat=store.startChat({id:'pack',path:'pack.json',digest:'digest'})
- const run=new AuthoringRun({} as import('../research/run').RunPorts)
+ const run=new SavedChatRun(chat.id,chat,{project:'/project',client:async()=>{throw Error('No dispatch')},prepare:async()=>{throw Error('No dispatch')},reconcile:async()=>undefined,pin:()=>{},problem:()=>{}})
  store.report(chat.id,{run,state:run.getSnapshot(),sources:[],model:'fixture'} as unknown as ResearchRunBinding)
  const turns=[{id:'test-user',role:'user' as const,kind:'message' as const,text:'Design boundary cases',at:'2026-10-13T12:00:00Z',testDesign:{owner:'pack',proposalId:'proposal'}},{id:'test-assistant',role:'assistant' as const,kind:'message' as const,text:'Proposed cases for review',at:'2026-10-13T12:01:00Z',testDesign:{owner:'pack',proposalId:'proposal'}}]
  store.appendConversation(chat.id,turns);store.appendConversation(chat.id,turns)
+ expect(run.getSnapshot().turns).toHaveLength(2)
  store.report(chat.id,{run,state:INITIAL_STATE,sources:[],model:'fixture'} as unknown as ResearchRunBinding)
  await store.checkpoint(new AbortController().signal)
  expect(store.getSnapshot().chats).toHaveLength(1)
@@ -444,4 +482,63 @@ it('restores refused Dialect candidates and exact findings without saved-action 
  const bad=structuredClone(saved) as any;bad.chats[0].inputActions[0].dialectCheck.report.compatibility={notes:'not findings'}
  const invalid=setup({read:async()=>({project:'/project',sha256:'loaded',content:bad})});await invalid.store.load()
  expect(invalid.store.getSnapshot().ready).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
+})
+
+ it('roundtrips exact critic choices and preserves explicit legacy booleans without inventing an absent choice',async()=>{
+  const {store,write}=setup();await store.load()
+  const settings=[{}, {adversarialReview:false},{adversarialReview:true}, ...(['off','auto','on'] as const).map(critic=>({critic,criticReasoning:'ultra' as const}))]
+  for(const setting of settings){const chat=store.create();store.update(chat.id,setting)}
+  await store.flush()
+  const document=write.mock.calls.at(-1)![0] as {chats:import('./store').Chat[]}
+  const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await loaded.store.load()
+  for(let i=0;i<settings.length;i++){
+   const expected=document.chats[i]!
+   expect(loaded.store.getSnapshot().chats[i]).toMatchObject(expected)
+   expect(loaded.store.getSnapshot().chats[i]?.adversarialReview).toBe(expected.adversarialReview)
+   expect(loaded.store.getSnapshot().chats[i]?.critic).toBe(expected.critic)
+   expect(loaded.store.getSnapshot().chats[i]?.criticReasoning).toBe(expected.criticReasoning)
+  }
+ })
+
+it('reads the shared critic control vectors through the actual saved chat reader',async()=>{
+ for(const row of criticControls){
+  const {store}=setup();await store.load();const original=store.create()
+  const chat={...original,...row.chat}
+  const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content:{version:1,chats:[chat]}})});await loaded.store.load()
+  const actual=loaded.store.getSnapshot().chats[0]!
+  expect(actual.critic,row.name).toBe(row.chat.critic)
+  expect(actual.criticReasoning,row.name).toBe(row.chat.criticReasoning)
+  expect(actual.adversarialReview,row.name).toBe(row.chat.adversarialReview)
+  expect(criticMode({critic:savedCriticChoice(actual),criticProject:row.project||undefined} as Parameters<typeof criticMode>[0],{}).mode,row.name).toBe(row.mode)
+ }
+})
+
+it('lets an explicit control edit restore project inheritance after a legacy boolean',async()=>{
+ const {store,write}=setup();await store.load();const chat=store.create()
+ store.update(chat.id,{adversarialReview:false})
+ store.update(chat.id,criticChoice('on'))
+ expect(store.getSnapshot().chats[0].critic).toBe('on')
+ expect(store.getSnapshot().chats[0].adversarialReview).toBeUndefined()
+ store.update(chat.id,criticChoice(undefined));await store.flush()
+ const document=write.mock.calls.at(-1)![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await restored.store.load()
+ const read=restored.store.getSnapshot().chats[0]
+ expect(read.critic).toBeUndefined();expect(read.adversarialReview).toBeUndefined()
+ expect(criticMode({critic:savedCriticChoice(read),criticProject:'on'},{}).mode).toBe('on')
+})
+
+it('refuses malformed original critic controls in persisted JSON without changing history',async()=>{
+ const base=setup();await base.store.load();const chat=base.store.create()
+ const invalidControls=[
+  ...[null,false,true,0,1,'','invalid',[],{}].flatMap(critic=>[{critic},{critic,adversarialReview:true}]),
+  ...[null,0,1,'','false','invalid',[],{}].flatMap(adversarialReview=>[{adversarialReview},{critic:'on',adversarialReview}]),
+ ]
+ for(const controls of invalidControls){
+  const content=JSON.parse(JSON.stringify({version:1,chats:[{...chat,...controls}]}))
+  const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content})});await loaded.store.load()
+  expect(loaded.store.getSnapshot().ready,JSON.stringify(controls)).toBe(false)
+  expect(loaded.store.getSnapshot().error,JSON.stringify(controls)).toBe('Invalid saved chat')
+  expect(loaded.store.getSnapshot().chats).toEqual([])
+  expect(loaded.write).not.toHaveBeenCalled()
+ }
 })

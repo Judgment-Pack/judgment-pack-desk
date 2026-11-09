@@ -1,3 +1,4 @@
+import { CodeBlock } from '../ui/CodeBlock'
 import {PolicyInterpretationProposals} from '../policies/PolicyInterpretation'
 import {usePolicyChatContext} from '../policies/chatContext'
 import {PolicyChatProposals} from '../policies/PolicyChatProposals'
@@ -9,8 +10,10 @@ import {RetryResponseButton} from './RetryResponseButton'
 import {PlanCard} from '../assistant/planning/PlanCard'
 import {ChatMemoryReview} from '../assistant/memory/MemorySettings'
 import { ChatTestProposals, useChatTestProposals } from '../packs/test-workspace/ChatTestProposals'
+import {approvalShownArguments,approvalShownDigest} from '@judgment-pack/harness/contract'
 import {AssistantApprovalControl} from '../assistant/approvals/AssistantApprovalControl'
-import { ResponseRecovery } from './ResponseRecovery'
+import {SourceApprovalControl} from '../assistant/sourceApprovals/SourceApprovalControl'
+import { ResponseRecovery, DialectReadRecovery } from './ResponseRecovery'
 import { QuestionCard } from './QuestionCard'
 import { ChatComposer } from './ChatComposer'
 import { submitQuestion, continueQuestion } from './questionActions'
@@ -52,6 +55,7 @@ import { createPortal } from 'react-dom'
 import { useInspectorControls } from '../shell/InspectorSlot'
 import { VisuallyHidden } from 'radix-ui'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useStorageLineOff } from '../admin/useStorageBudgetStatus'
 import { MessageDetails, ReadingDetails, useReadingDetails } from './ReadingDetails'
 import { IconLink } from '../shell/icons'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
@@ -72,7 +76,7 @@ import { AssistantOptions } from './AssistantOptions'
 import { ChatToolbar, chatHref } from './ChatHistory'
 import { chatTitle, openNewChat, type ChatScope } from './navigation'
 import { useChats } from './ChatProvider'
-import { retainSentDocuments, type Chat } from './store'
+import { criticChoice, retainSentDocuments, type Chat } from './store'
 import styles from './ChatWorkspace.module.css'
 
 export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = false, context: suppliedContext, proposalActions, locked: suppliedLocked = false, inputActionsLocked = false, placement = 'main', headerTarget, historyLoading = false, active = true, draftActionsInHeader = false, openGraphDraftId, scope }: {
@@ -93,6 +97,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const { store, bindings, packDrafts } = useChats()
   const binding = bindings.get(chat.id)
   const state = binding?.state ?? INITIAL_STATE
+  const inputBlocked = binding?.run?.inputBlocked ?? Boolean(chat.serverRequest)
+  const composerLocked = locked || inputBlocked
   const recoverableTurns = useMemo(() => new Set(state.candidates.length ? [] : state.turns.flatMap((turn, index) => turn.role === 'assistant' && turn.kind === 'message' && recoverableProposal(turn.text) ? [index] : [])), [state.turns, state.candidates.length])
   const liveTurn: Turn | undefined = state.status === 'running' && state.streaming ? {id: state.streamingId ?? 'streaming', role: 'assistant', kind: 'message', text: state.streaming, at: ''} : undefined
   const shownTurns = liveTurn ? [...state.turns, liveTurn] : state.turns
@@ -141,6 +147,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
 
   const graphContext = context?.kind === 'graph' || Boolean(chat.graph)
   const running = state.status === 'running'
+  // Capture the exact text and its proof in this render's decision closure.
+  const pendingApproval = binding?.run?.pendingApproval
+  const approvalText = pendingApproval && approvalShownArguments(pendingApproval.approval)
+  const shownApproval = pendingApproval && {callId:pendingApproval.callId,shownDigest:approvalShownDigest(pendingApproval.approval)}
   const effective = useEffectiveConfig()
   const research = effective.config.research
   const searchPreference = useSearchPreference()
@@ -152,7 +162,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const connectionBusy = connections.busyChatId === chat.id
   const attachmentButton = useRef<HTMLButtonElement>(null)
   const openConnection = (provider?: ConnectionProvider) => requestAnimationFrame(() => connections.open({ provider, descriptor: connectionCatalog.entries.find(item => item.descriptor.id === provider)?.descriptor, chatId: chat.id, opener: attachmentButton.current }))
-  const upload = useChatAttachments(store, chat.id, locked || running, research)
+  const upload = useChatAttachments(store, chat.id, composerLocked || running, research)
   const otherRun = store?.running && store.running !== chat.id ? store.running : undefined
   const empty = state.turns.length === 0
   const idleEmpty = empty && state.status === 'idle' && !state.responses?.length && !state.events.length && !state.candidates.length
@@ -167,14 +177,14 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     : slot.engine !== 'codex' && slot.keyStatus === 'error' ? msg('The saved API key could not be checked.')
     : slot.engine !== 'codex' && slot.keyStatus === 'pending' ? msg('Checking your Assistant configuration…')
     : msg('Configure Assistant to begin. Your message will stay here.')
-  const composerReadiness = !historyLoading && !running ? needsConfig ? setupMessage : systemMessage(blocked) : ''
-  const readinessAction = composerReadiness && needsConfig ? slot.recovery ?? (assistantReady(slot) ? 'configure' : undefined) : undefined
+  const composerReadiness = !historyLoading && !running ? inputBlocked ? msg('This chat is owned by an active server response. Reconnect or stop it before editing.') : needsConfig ? setupMessage : systemMessage(blocked) : ''
+  const readinessAction = composerReadiness && !inputBlocked && needsConfig ? slot.recovery ?? (assistantReady(slot) ? 'configure' : undefined) : undefined
   const attachments = chat.attachments ?? []
   const hasMessage = Boolean(chat.composer.trim() || attachments.length)
   const inputKey = JSON.stringify([chat.composer, attachments, chat.mode])
   const showResearchSuggestion = suggestedInput === inputKey && searchAllowed && chat.mode === 'draft'
   const send = async (choice?: ResearchChoice) => {
-    if (!store || !hasMessage || locked || running || otherRun || blocked || connectionBusy || upload.isReading()) return
+    if (!store || !hasMessage || composerLocked || running || otherRun || blocked || connectionBusy || upload.isReading()) return
     if (needsConfig) return
     const planCommand=/^\/plan(?:\s|$)/i.test(chat.composer.trim())
     const message=planCommand?chat.composer.trim().replace(/^\/plan\s*/i,''):chat.composer
@@ -237,7 +247,9 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const responses = state.responses ?? []
   const lastResponse = responses.at(-1)
   const lastUser = [...state.turns].reverse().find(turn => turn.role === 'user')
-  const canChooseResearch = searchAllowed && !running && lastUser?.researchChoice !== 'provided' && lastUser?.researchChoice !== 'research' && lastResponse?.afterTurnId === lastUser?.id && !!lastResponse?.work.items.some(item=>item.researchSuggestion)
+  const historicalSources = binding?.run?.ownership==='server' && state.restored && binding.sources.some(source=>source.verification.state!=='verified') && lastUser?.creation?.kind!=='research-choice'
+  const responseMatchesLastUser = !!lastUser && (lastResponse?.afterTurnId===lastUser.id || !!lastResponse?.work.items.some(item=>item.externalControl?.requestId===lastUser.id))
+  const canChooseResearch = !!binding?.run?.chooseResearch && searchAllowed && !running && (historicalSources || lastUser?.researchChoice !== 'provided' && lastUser?.researchChoice !== 'research' && responseMatchesLastUser && !!lastResponse?.work.items.some(item=>item.researchSuggestion || item.externalControl?.kind==='research-choice'))
   const actionDisabled = locked || running || Boolean(blocked) || Boolean(otherRun) || connectionBusy || upload.reading
   const continueExecution = () => {
     if(!store||actionDisabled||!binding?.run?.prepareBudgetContinuation())return
@@ -248,7 +260,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     if(actionDisabled || !binding?.run?.canRetryResponse)return
     if(store?.perform(chat.id,active=>active.run?.retryResponse(),false)){following.current=true;setAwayFromLatest(false)}
   }
-  const lastSearch = lastResponse?.afterTurnId === lastUser?.id ? lastResponse && [...lastResponse.work.items].reverse().find(item => item.name === 'search_sources') : undefined
+  const lastSearch = responseMatchesLastUser ? lastResponse && [...lastResponse.work.items].reverse().find(item => item.name === 'search_sources') : undefined
   const continueSearch = (query: string) => {
     if (locked || running || blocked || otherRun || connectionBusy || upload.isReading()) return
     // An explicit new, read-only research turn preserves unsent composer text
@@ -276,6 +288,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     title: context.title ?? '', detail: context.detail, text: context.text, tests: context.tests, open: placement === 'pane',
   } : undefined
   const testProposals = useChatTestProposals(chat.id)
+  // Off in this release: a retained read is not re-inspected (no recovery storage).
+  const storageLineOff = useStorageLineOff()
   const hasRelatedWork = !!(testProposals.length || context || chat.policy || chat.input || chat.pack || chat.draftId || chat.graph || chat.inputDrafts?.length || chat.inputActions?.length || chat.graphDrafts?.length)
   const openRelatedWork = (opener: HTMLElement | null) => read(<RelatedChatWork chatId={chat.id} current={workContext} openGraphDraftId={openGraphDraftId} disabled={locked||inputActionsLocked}/>, opener)
   const inputContextHeader = isInput && context && placement === 'pane'
@@ -311,7 +325,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
           : turn.kind === 'unknowns' ? <OpenQuestions text={turn.text} documents={chat.documents} onRead={read}><MessageTime turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.text}/>, opener)}/></OpenQuestions>
           : turn.role === 'assistant' ? <MessageRenderer onRead={read} scope={chat.id} documents={chat.documents} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} /> : <div className={styles.userText}><LinkedMessageText text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text}/></div>}
         {turn.role === 'user' && <SentAttachments files={turn.attachments ?? []} onRead={read}/>}
-        {recoverableTurns.has(index) && <ChatAction disabled={running || locked || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recoverDraft(turn.text), false)}>{msg('Recover draft')}</ChatAction>}
+        {binding?.run?.recoverDraft && recoverableTurns.has(index) && <ChatAction disabled={running || locked || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recoverDraft?.(turn.text), false)}>{msg('Recover draft')}</ChatAction>}
         {turn.interrupted && <p className={styles.caption}>{msg('Response interrupted')}</p>}
         {turn !== liveTurn && turn.role === 'assistant' && turn.kind === 'message' && <CopyMessage text={turn.text} />}
         {responses.filter(row => row.messageId === turn.id).map(renderResponse)}
@@ -336,8 +350,18 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       }}/>
 
       <ExecutionProgress execution={state.execution} report={state.responses?.at(-1)?.work.report} disabled={actionDisabled} onStop={()=>store?.perform(chat.id,active=>active.run?.keepExecution(),false)} onContinue={continueExecution}/>
-      <ChatMemoryReview chatId={chat.id}/>
+      <ChatMemoryReview chatId={chat.id} observation={state.status+':'+state.events.filter(e=>e.type==='memory_proposed').length}/>
       {proposalActions === undefined && chat.pack ? <LinkedPackProposal chat={chat} state={state} busy={running || Boolean(otherRun)} onCheck={()=>store?.perform(chat.id, active=>active.run?.recheck(),false)}/> : proposalActions}
+      {state.status!=='running' && state.streaming && <section aria-label={msg('Written so far')}><p className={styles.caption}>{msg('Written so far')}</p><MessageRenderer text={state.streaming}/></section>}
+      {binding?.run?.pendingPlanDecision && <div role="group" aria-label={msg('Approval required')}>
+        <h3>{msg('Plan')}</h3><p>{binding.run.pendingPlanDecision.explanation}</p>
+        <h4>{msg('Current')}</h4><ol>{binding.run.pendingPlanDecision.current.map(step=><li key={step.id}>{step.step}{step.detail && <p>{step.detail}</p>}</li>)}</ol>
+        <h4>{msg('Proposed')}</h4><ol>{binding.run.pendingPlanDecision.candidate.map(step=><li key={step.id}>{step.step}{step.detail && <p>{step.detail}</p>}</li>)}</ol>
+        <ChatAction disabled={actionDisabled} onClick={()=>binding.run?.decidePlan?.(true)}>{msg('Approve')}</ChatAction><ChatAction disabled={actionDisabled} onClick={()=>binding.run?.decidePlan?.(false)}>{msg('Decline')}</ChatAction>
+      </div>}
+      {pendingApproval && <div role="group" aria-label={msg('Approval required')}><p>{pendingApproval.name}</p>{pendingApproval.runtimeOwner&&<div><p>{msg('Runtime')}</p><dl><dt>{msg('Project')}</dt><dd>{pendingApproval.runtimeOwner.projectLabel}</dd><dt>{msg('Principal')}</dt><dd>{pendingApproval.runtimeOwner.principalLabel}</dd><dt>{msg('Scope')}</dt><dd>{pendingApproval.runtimeOwner.scopeLabel}</dd></dl></div>}<CodeBlock label={msg('Arguments')} text={approvalText!} verbatim/><ChatAction disabled={actionDisabled} onClick={()=>binding?.run?.decideApproval?.(true,shownApproval)}>{msg('Approve')}</ChatAction><ChatAction disabled={actionDisabled} onClick={()=>binding?.run?.decideApproval?.(false)}>{msg('Decline')}</ChatAction></div>}
+      {binding?.run?.needsReconnect && binding.run.reconnect && <ChatAction disabled={running || locked || Boolean(otherRun)} onClick={()=>void binding.run?.reconnect?.()}>{msg('Reconnect')}</ChatAction>}
+      <DialectReadRecovery view={binding?.run?.dialectReadRecovery} failed={Boolean(binding?.run?.dialectReadRecoveryFailed)} busy={Boolean(binding?.run?.dialectReadRecoveryBusy)} disabled={running||locked||Boolean(otherRun)} onInspect={binding?.run?.inspectDialectRead?operation=>void binding.run?.inspectDialectRead?.(operation):undefined} onRefresh={binding?.run?.refreshDialectReadRecovery?()=>void binding.run?.refreshDialectReadRecovery?.():undefined} storageLineOff={storageLineOff}/>
       {state.status==='failed' && <ResponseRecovery failure={state.failure} detail={state.detail} disabled={actionDisabled} onRetry={binding?.run?.canExtendResponse?continueExecution:binding?.run?.canRetryResponse?retryResponse:undefined} additionalRequests={binding?.run?.canExtendResponse?Math.min(REQUEST_INCREMENT,MAX_REQUEST_ALLOWANCE-state.execution!.limit):undefined}/>}
       </div>
     </div>
@@ -350,18 +374,19 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
         <ComposerTaskStatus state={state} empty={empty} savedCandidate={savedCandidate || Boolean(chat.pack)}/>
         {chat.draftId && !draftAvailable && <p className={styles.caption}>{msg('This draft is no longer available.')}</p>}
       {!draftActionsInHeader && !chat.pack && !savedCandidate && state.candidates.length > 0 && <ChatAction disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Run checks")}</ChatAction>}
-      {canRetryExpectationValidation(state) && <ChatAction disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation())}>{msg("Retry validation")}</ChatAction>}
+      {binding?.run?.retryExpectationValidation && canRetryExpectationValidation(state) && <ChatAction disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation?.(),false)}>{msg("Retry validation")}</ChatAction>}
       </div>
+      {historicalSources && searchAllowed && <p className={styles.caption}>{msg('Retained sources remain available to read. Fresh research can establish current source evidence for this draft.')}</p>}
       {(showResearchSuggestion || canChooseResearch) && <ResearchSuggestion disabled={actionDisabled} onChoose={choice=>{
         if(actionDisabled)return
         if(showResearchSuggestion)void send(choice)
-        else if(store?.perform(chat.id,active=>active.run?.chooseResearch(choice),false)){following.current=true;setAwayFromLatest(false)}
+        else if(store?.perform(chat.id,active=>active.run?.chooseResearch?.(choice),false)){following.current=true;setAwayFromLatest(false)}
       }}/>}
       <ChatComposer id={id} inputRef={messageInput} rows={empty && placement === 'main' ? 3 : 2}
         value={chat.composer} onChange={composer => store?.update(chat.id, { composer })}
         placeholder={(!readinessAction && composerReadiness) || (isInput ? msg("Ask about this dialect…") : graphContext ? msg("Ask about this graph…") : chat.pack || draftVisible ? msg("Ask about this pack…") : msg("Ask a question or describe a task…"))}
         describedBy={composerReadiness ? `${id}-readiness` : undefined}
-        disabled={locked || upload.reading} running={running}
+        disabled={composerLocked || upload.reading} running={running}
         sendDisabled={needsConfig || !hasMessage || !binding || Boolean(otherRun) || connectionBusy || Boolean(blocked && !needsConfig)}
         onSend={() => void send()} onStop={() => binding?.run?.stop()}
         readiness={composerReadiness && (chat.composer || readinessAction || needsConnection
@@ -373,19 +398,20 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
           : <VisuallyHidden.Root id={`${id}-readiness`} role="status">{composerReadiness}</VisuallyHidden.Root>)}
         controls={<>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
-          <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()} onLink={webSourceOffered(research, { local: localDrive, catalogWeb: connectionCatalog.web }) ? () => requestAnimationFrame(() => connections.open({ source: 'web', chatId: chat.id, opener: attachmentButton.current })) : undefined}
+          <AttachmentMenu triggerRef={attachmentButton} disabled={running || composerLocked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()} onLink={webSourceOffered(research, { local: localDrive, catalogWeb: connectionCatalog.web }) ? () => requestAnimationFrame(() => connections.open({ source: 'web', chatId: chat.id, opener: attachmentButton.current })) : undefined}
             onMore={() => openConnection()}
             connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ descriptor: item.descriptor, provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
-          <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select size="small" quiet id={`${id}-mode`} value={chat.interaction==='plan'?'plan':chat.mode} disabled={running || locked} onValueChange={mode => store?.update(chat.id, mode==='plan'?{interaction:'plan'}:{interaction:'work',mode:mode as Chat['mode']})} options={[{value:'plan',label:msg('Plan')},{ value: 'draft', label: msg("Chat") }, { value: chat.mode === 'research' ? 'research' : 'web-research', label: msg("Research") }]} /></div>
-          {chat.interaction==='plan'&&<Select size="small" quiet id={`${id}-plan-sources`} aria-label={msg('Plan sources')} value={chat.mode} disabled={running||locked} onValueChange={mode=>store?.update(chat.id,{mode:mode as Chat['mode']})} options={[{value:'draft',label:msg('Chat sources')},{value:chat.mode==='research'?'research':'web-research',label:msg('Research sources')}]}/>}
-          {chat.interaction==='plan'?<span className={styles.caption}>{msg('Approvals apply when work starts')}</span>:chat.policy?<span className={styles.caption}>{msg('Draft updates require a reviewed proposal')}</span>:<AssistantApprovalControl publication={scope?.kind==='pack'?undefined:pendingPublication(chat.inputActions,scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined)} chatId={chat.id} pack={!scope||scope.kind==='pack'?chat.pack:undefined} checkpoint={()=>store?.checkpoint(new AbortController().signal)??Promise.resolve()} inputId={scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined} disabled={running||locked||inputActionsLocked}/> }
-          {((selected?.models.length ?? 0)>0||effective.aiConnections?.data?.connections.some(c=>c.enabled))&&<ModelControl requiredSelection={needsConnection} id={`${id}-model`} model={binding?.model||selected?.model||''} models={selected?.models??[]} thinking={slot.thinking} thinkingOverride={chat.apiThinking} onThinkingChange={apiThinking=>store?.update(chat.id,{apiThinking})} connectionId={chat.aiConnection??slot.connectionId} onConnectionChange={(aiConnection,aiConnectionName,model)=>store?.update(chat.id,{aiConnection,aiConnectionName,model,apiThinking:undefined,reasoning:{model,effort:null}})} agent={slot.agent} value={chat.reasoning} codex={slot.engine==='codex'} enabled={assistantReady(slot)} disabled={running||locked} onModelChange={model=>store?.update(chat.id,{model,...(slot.engine==='codex'?{reasoning:{model,effort:null}}:{})})} onReasoningChange={reasoning=>store?.update(chat.id,{reasoning})}/>}
-          <AssistantOptions reasoning={chatReasoningAgent(slot.agent, binding?.model || selected?.model || '', chat.reasoning)?.effort} researchMode={chat.researchMode} searchConnection={chat.searchConnection} searchOptions={chat.mode !== 'research' && <ChatSearchOptions onConfigure={element => { searchSetupButton.current = element; setConfigureSearch(true) }} chat={chat} disabled={running||locked} onChange={patch=>store?.update(chat.id,patch)}/>} thinking={slot.thinking} tools={selected?.tools ?? []} mode={chat.mode} websiteExploration={websiteReadable(research,{local:localDrive,catalogWeb:connectionCatalog.web,catalogDiscovery:connectionCatalog.discovery})} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
+          <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select size="small" quiet id={`${id}-mode`} value={chat.interaction==='plan'?'plan':chat.mode} disabled={running || composerLocked} onValueChange={mode => store?.update(chat.id, mode==='plan'?{interaction:'plan'}:{interaction:'work',mode:mode as Chat['mode']})} options={[{value:'plan',label:msg('Plan')},{ value: 'draft', label: msg("Chat") }, { value: chat.mode === 'research' ? 'research' : 'web-research', label: msg("Research") }]} /></div>
+          {chat.interaction==='plan'&&<Select size="small" quiet id={`${id}-plan-sources`} aria-label={msg('Plan sources')} value={chat.mode} disabled={running||composerLocked} onValueChange={mode=>store?.update(chat.id,{mode:mode as Chat['mode']})} options={[{value:'draft',label:msg('Chat sources')},{value:chat.mode==='research'?'research':'web-research',label:msg('Research sources')}]}/>}
+          {chat.interaction==='plan'?<span className={styles.caption}>{msg('Approvals apply when work starts')}</span>:chat.policy?<span className={styles.caption}>{msg('Draft updates require a reviewed proposal')}</span>:<AssistantApprovalControl publication={scope?.kind==='pack'?undefined:pendingPublication(chat.inputActions,scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined)} chatId={chat.id} pack={!scope||scope.kind==='pack'?chat.pack:undefined} checkpoint={()=>store?.checkpoint(new AbortController().signal)??Promise.resolve()} inputId={scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined} disabled={running||composerLocked||inputActionsLocked}/> }
+          {store&&<SourceApprovalControl chatId={chat.id} scope={store} disabled={running||composerLocked||inputActionsLocked}/>}
+          {((selected?.models.length ?? 0)>0||effective.aiConnections?.data?.connections.some(c=>c.enabled))&&<ModelControl requiredSelection={needsConnection} id={`${id}-model`} model={binding?.model||selected?.model||''} models={selected?.models??[]} thinking={slot.thinking} thinkingOverride={chat.apiThinking} onThinkingChange={apiThinking=>store?.update(chat.id,{apiThinking})} connectionId={chat.aiConnection??slot.connectionId} onConnectionChange={(aiConnection,aiConnectionName,model)=>store?.update(chat.id,{aiConnection,aiConnectionName,model,apiThinking:undefined,reasoning:{model,effort:null}})} agent={slot.agent} value={chat.reasoning} codex={slot.engine==='codex'} enabled={assistantReady(slot)} disabled={running||composerLocked} onModelChange={model=>store?.update(chat.id,{model,...(slot.engine==='codex'?{reasoning:{model,effort:null}}:{})})} onReasoningChange={reasoning=>store?.update(chat.id,{reasoning})}/>}
+          <AssistantOptions criticReasoning={chat.criticReasoning} onCriticReasoning={criticReasoning=>store?.update(chat.id,{criticReasoning})} codex={slot.engine==='codex'} connectionId={slot.connectionId} criticModel={slot.agent?.criticModel??slot.endpoint?.criticModel??binding?.model??selected?.model??''} reasoning={chatReasoningAgent(slot.agent, binding?.model || selected?.model || '', chat.reasoning)?.effort} researchMode={chat.researchMode} searchConnection={chat.searchConnection} searchOptions={chat.mode !== 'research' && <ChatSearchOptions onConfigure={element => { searchSetupButton.current = element; setConfigureSearch(true) }} chat={chat} disabled={running||composerLocked} onChange={patch=>store?.update(chat.id,patch)}/>} thinking={slot.thinking} tools={selected?.tools ?? []} mode={chat.mode} websiteExploration={websiteReadable(research,{local:localDrive,catalogWeb:connectionCatalog.web,catalogDiscovery:connectionCatalog.discovery})} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.critic ?? (chat.adversarialReview === undefined ? undefined : chat.adversarialReview ? 'on' : 'off')} onReview={value => store?.update(chat.id, criticChoice(value))} disabled={running || composerLocked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
         </>}
         feedback={upload.error && <p className={styles.caption} role="alert">{systemMessage(upload.error)}</p>}
       >
         {reference && <ReferenceChip reference={reference} onRemove={removeReference} />}
-        <AttachmentList files={attachments} disabled={locked || running || upload.reading} onChange={file => store?.update(chat.id, { attachments: attachments.map(item => item.id === file.id ? file : item) })} onRemove={id => store?.update(chat.id, { attachments: attachments.filter(item => item.id !== id) })} />
+        <AttachmentList files={attachments} disabled={composerLocked || running || upload.reading} onChange={file => store?.update(chat.id, { attachments: attachments.map(item => item.id === file.id ? file : item) })} onRemove={id => store?.update(chat.id, { attachments: attachments.filter(item => item.id !== id) })} />
         {upload.reading && <div className={styles.attachmentProgress}><span role="status">{systemMessage(upload.progress) || msg("Reading files…")}</span><ChatAction variant="quiet" onClick={upload.cancel}>{msg("Cancel")}</ChatAction></div>}
       </ChatComposer>
     </div>

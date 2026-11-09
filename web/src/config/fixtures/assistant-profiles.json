@@ -757,5 +757,132 @@
         "projectBrief": ""
       }
     }
+  },
+  {
+    "name": "project instructions at the project profile root",
+    "accepted": true,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": "Keep missing facts explicit. \ud83d\ude00\n"
+    }
+  },
+  {
+    "name": "empty project instructions retain explicit source",
+    "accepted": true,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": ""
+    }
+  },
+  {
+    "name": "project instructions with registry inheritance",
+    "accepted": true,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "projectInstructions": "Use concise answers."
+    }
+  },
+  {
+    "name": "project instructions must be text",
+    "accepted": false,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": 7
+    }
+  },
+  {
+    "name": "null project instructions refused",
+    "accepted": false,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": null
+    }
+  },
+  {
+    "name": "project instructions may not enter shared model preferences",
+    "accepted": false,
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": true,
+        "projectInstructions": "Do something"
+      }
+    }
+  },
+  {
+    "name": "critic off v1",
+    "value": {
+      "profileVersion": 1,
+      "critic": "off"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic auto v1",
+    "value": {
+      "profileVersion": 1,
+      "critic": "auto"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic on v1",
+    "value": {
+      "profileVersion": 1,
+      "critic": "on"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic off v2",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "critic": "off"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic auto v2",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "critic": "auto"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic on v2",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "critic": "on"
+    },
+    "accepted": true
+  },
+  {
+    "name": "invalid critic sometimes",
+    "value": {
+      "profileVersion": 1,
+      "critic": "sometimes"
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid critic False",
+    "value": {
+      "profileVersion": 1,
+      "critic": false
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid critic None",
+    "value": {
+      "profileVersion": 1,
+      "critic": null
+    },
+    "accepted": false
   }
 ]
